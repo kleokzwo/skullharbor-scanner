@@ -27,7 +27,7 @@ _PROFILES = {
         key="monthly",
         public_name="SkullHarbor Advanced Check",
         self_service=True,
-        adapter_slots=("primary", "secondary"),
+        adapter_slots=("primary", "secondary", "surface"),
         # Controlled expansion: five categories; DoS category 6 is excluded.
         primary_tuning="1234b",
     ),

@@ -14,7 +14,7 @@ assert free.primary_tuning == "12"
 
 assert monthly.public_name == "SkullHarbor Advanced Check"
 assert monthly.self_service is True
-assert monthly.adapter_slots == ("primary", "secondary")
+assert monthly.adapter_slots == ("primary", "secondary", "surface")
 assert len(monthly.primary_tuning) == 5
 assert "6" not in monthly.primary_tuning
 assert monthly.primary_tuning != free.primary_tuning
@@ -35,7 +35,7 @@ assert [x["key"] for x in catalog] == ["free", "monthly", "annual"]
 assert catalog[2]["contact"] == "hello@skullharbor.org"
 assert catalog[2]["pentests_per_year"] == 2
 serialized = repr(catalog).lower()
-for private_term in ("nikto", "nuclei", "tuning", "adapter", "1234b"):
+for private_term in ("nikto", "nuclei", "nmap", "tuning", "adapter", "1234b"):
     assert private_term not in serialized
 
 # Customer scan API cannot ask for a stronger profile or raw scanner controls.

@@ -11,7 +11,7 @@ from typing import Callable
 
 from database import SessionLocal
 from models import Finding, Scan
-from scanner import AdapterTimeoutError, run_nikto_streaming, run_nuclei_streaming
+from scanner import AdapterTimeoutError, run_nikto_streaming, run_nuclei_streaming, run_surface_discovery_streaming
 from scan_profiles import require_self_service_profile
 
 
@@ -39,6 +39,7 @@ class ScanEngine:
         self._adapter_slots = {
             "primary": self._run_primary_web_security,
             "secondary": self._run_secondary_web_security,
+            "surface": self._run_surface_discovery,
         }
 
     def enqueue(self, scan_id: int, target: str, profile: str, expected_hostname: str, initial_ips: list[str]):
@@ -257,3 +258,14 @@ class ScanEngine:
                 self._set(ctx.scan_id, progress=min(72, snap["progress"] + 2))
 
         return run_nuclei_streaming(ctx.target, on_log, stop_event, profile=ctx.profile)
+    def _run_surface_discovery(self, ctx: EngineContext, stop_event: threading.Event):
+        self._set(ctx.scan_id, stage="web-security", progress=62)
+
+        def on_log(line: str):
+            self._append(ctx.scan_id, line)
+            snap = self.snapshot(ctx.scan_id)
+            if snap and snap["progress"] < 73:
+                self._set(ctx.scan_id, progress=min(73, snap["progress"] + 2))
+
+        return run_surface_discovery_streaming(ctx.target, on_log, stop_event, profile=ctx.profile)
+

@@ -3,10 +3,16 @@ from pathlib import Path
 from scanner import _customer_safe_text
 
 root = Path(__file__).resolve().parents[1]
-frontend = "\n".join(p.read_text(errors="ignore") for p in (root / "frontend").rglob("*") if p.is_file())
+frontend_root = root / "frontend"
+public_frontend_files = [frontend_root / "index.html"]
+public_frontend_files += [
+    p for p in (frontend_root / "src").rglob("*")
+    if p.is_file() and p.suffix.lower() in {".js", ".jsx", ".ts", ".tsx", ".css", ".html"}
+]
+frontend = "\n".join(p.read_text(errors="ignore") for p in public_frontend_files if p.exists())
 main = (root / "backend" / "main.py").read_text()
 
-for vendor in ("nikto", "nuclei"):
+for vendor in ("nikto", "nuclei", "nmap"):
     assert vendor not in frontend.lower(), f"internal adapter name leaked into frontend: {vendor}"
     sanitized = _customer_safe_text(f"{vendor} detected an observation")
     assert vendor not in sanitized.lower()

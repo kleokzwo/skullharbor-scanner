@@ -10,6 +10,8 @@ Central ScanEngine and multi-adapter orchestration behind the authorized SkullHa
 
 ## Sprint 4.1 — Scan Profiles & Product Tiers
 
+**Status:** DONE in v0.4.1.
+
 Define the server-side scan policies that use the Sprint 4 engine. Customers select a SkullHarbor product/check level; they never select or configure concrete scanner tools.
 
 ### FREE — SkullHarbor Quick Check
@@ -38,19 +40,25 @@ Define the server-side scan policies that use the Sprint 4 engine. Customers sel
 
 Implement FREE, MONTHLY and ANNUAL now as product/scan-profile policy. Do not implement payment, subscription lifecycle, seats or real license validation here; those remain Sprint 6 responsibilities.
 
-**DONE when:** ScanEngine selects a server-owned profile from the product tier; FREE and MONTHLY produce measurably different controlled scan depth; ANNUAL routes to the managed-pentest path; customers cannot select internal scanners or unsafe tuning parameters; tests cover tier/profile enforcement and customer-boundary behavior.
+**DONE:** ScanEngine selects server-owned tier policies; FREE and MONTHLY have measurably different bounded depth; ANNUAL is blocked from self-service execution; customers cannot select internal scanners or unsafe tuning; tier orchestration and customer-boundary regressions pass.
 
 ## Sprint 5 — Customer / Company Verification
 
-Registration does not automatically grant commercial scanner access. Add customer/company approval state and abuse controls.
+**Status:** COMPLETE — Steps 1–4 DONE; 14/14 backend regression/policy/security tests pass.
+
+The product remains downloadable/local: customer scans and findings execute locally and are not moved to a SkullHarbor cloud scanner. Registration does not automatically grant commercial scanner access. Add customer/company approval state and abuse controls.
 
 Product tier alone must never authorize arbitrary targets. Customer/company approval is a separate prerequisite for commercial scanner eligibility.
 
-**DONE when:** only approved customers are eligible for trial/subscription access, and approval state is enforced server-side.
+Step 2 adds a minimal local company review payload (company name/domain/intended authorized use). Customer-editable company data cannot mutate approval state and company identity never substitutes for exact-host DNS authorization.
 
-## Sprint 6 — License Server
+**DONE when:** only approved customers are eligible for trial/subscription access, approval state is enforced by the product authorization path, and the downloadable/local scan architecture remains intact. Local cached state alone is not considered anti-tamper security.
 
-Central products, subscriptions, licenses, seats, installations and trial history.
+## Sprint 6 — License / Entitlement Authority
+
+**Status:** IN PROGRESS — Step 1 DONE.
+
+Central products, subscriptions, licenses, seats, installations and trial history. This is an entitlement/activation service, not a cloud scanner: scan targets, raw results and findings remain local.
 
 Connect the product tiers defined in Sprint 4.1 to real entitlement state. Billing/subscription state must not bypass customer approval or target/scope authorization.
 

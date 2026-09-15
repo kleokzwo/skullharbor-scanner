@@ -8,6 +8,7 @@ Current internal adapters:
 
 - Nikto — https://github.com/sullo/nikto
 - Nuclei — https://github.com/projectdiscovery/nuclei
+- Nmap — https://nmap.org/
 
 This file exists for engineering/licensing transparency. Customer-facing scan
 results use SkullHarbor's normalized finding model and do not expose implementation

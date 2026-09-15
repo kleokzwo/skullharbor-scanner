@@ -3,7 +3,9 @@ import os
 import re
 import subprocess
 import tempfile
+from pathlib import Path
 import time
+import xml.etree.ElementTree as ET
 
 from scan_profiles import get_scan_profile
 
@@ -28,6 +30,8 @@ NUCLEI_CONCURRENCY = "2"
 # Values are backend policy, not customer-controlled parameters.
 PRIMARY_ADAPTER_TIMEOUT_SECONDS = 300
 SECONDARY_ADAPTER_TIMEOUT_SECONDS = 300
+SURFACE_ADAPTER_TIMEOUT_SECONDS = 90
+SURFACE_ALLOWED_PORTS = (80, 443, 8080, 8443)
 PROCESS_STOP_GRACE_SECONDS = 5
 
 
@@ -241,7 +245,7 @@ def _customer_safe_text(value: str) -> str:
 
     # Internal tool names are implementation details. Preserve the useful
     # technical content while replacing branding with SkullHarbor wording.
-    text = re.sub(r"(?i)\b(?:nikto|nuclei)\b", "SkullHarbor Web Check", text)
+    text = re.sub(r"(?i)\b(?:nikto|nuclei|nmap)\b", "SkullHarbor Web Check", text)
     return text
 
 
@@ -470,6 +474,98 @@ def run_nuclei_streaming(target, log_cb, stop_event, profile="free", timeout_sec
                     if finding:
                         findings.append(finding)
         return findings
+    finally:
+        try:
+            os.unlink(output_path)
+        except OSError:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Sprint 4.1 / Step 2: bounded web-surface discovery adapter
+# ---------------------------------------------------------------------------
+def normalize_surface_xml(xml_text, target):
+    """Convert bounded port-discovery XML to the common customer finding schema.
+
+    Only non-standard alternate web ports become findings. Standard 80/443 are
+    expected for a web target and are therefore not reported as issues.
+    """
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return []
+
+    findings = []
+    for port in root.findall(".//port"):
+        state = port.find("state")
+        if state is None or state.get("state") != "open":
+            continue
+        try:
+            port_id = int(port.get("portid", "0"))
+        except ValueError:
+            continue
+        if port_id not in SURFACE_ALLOWED_PORTS or port_id in (80, 443):
+            continue
+
+        scheme = "https" if port_id == 8443 else "http"
+        finding_url = f"{scheme}://{_target_hostname(target)}:{port_id}/"
+        findings.append({
+            "scanner": PUBLIC_ENGINE_ID,
+            "rule_id": f"web.surface.alternate-port.{port_id}",
+            "category": "Attack Surface",
+            "severity": "info",
+            "title": "Additional web service port exposed",
+            "url": finding_url,
+            "description": f"An additional web service port ({port_id}) is reachable on the verified target.",
+            "impact": "Additional reachable services increase the externally visible attack surface and should be intentional and maintained.",
+            "recommendation": "Confirm that this service is required, access-controlled, patched, and included in the application's security review.",
+            "evidence": f"TCP port {port_id} accepted a connection during bounded surface discovery.",
+            "reference": None,
+            "raw_output": f"open tcp/{port_id}",
+        })
+    return findings
+
+
+def _target_hostname(target):
+    """Extract the already-authorized hostname without adding a new trust decision."""
+    from urllib.parse import urlparse
+    parsed = urlparse(target if "://" in target else f"https://{target}")
+    return parsed.hostname or target
+
+
+def run_surface_discovery_streaming(target, log_cb, stop_event, profile="free", timeout_seconds=SURFACE_ADAPTER_TIMEOUT_SECONDS):
+    """MONTHLY-only, fixed-port TCP discovery; no scripts, UDP, OS or version scan."""
+    try:
+        policy = get_scan_profile(profile)
+    except ValueError as exc:
+        raise RuntimeError("Unknown web scan profile") from exc
+    if not policy.self_service or "surface" not in policy.adapter_slots:
+        raise RuntimeError("Surface discovery is not enabled for this profile")
+
+    hostname = _target_hostname(target)
+    fd, output_path = tempfile.mkstemp(suffix=".xml")
+    os.close(fd)
+    cmd = [
+        "nmap",
+        "-sT", "-Pn", "-T2",
+        "--max-retries", "1",
+        "--host-timeout", "60s",
+        "-p", ",".join(str(p) for p in SURFACE_ALLOWED_PORTS),
+        "-oX", output_path,
+        hostname,
+    ]
+    log_cb("Starting bounded web surface discovery")
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        rc = _wait_bounded(proc, stop_event, timeout_seconds)
+        if stop_event.is_set():
+            raise RuntimeError("Scan stopped by user")
+        if rc != 0:
+            raise RuntimeError(f"Web surface discovery exited with code {rc}")
+        if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+            return []
+        xml_text = Path(output_path).read_text(encoding="utf-8", errors="replace")
+        return normalize_surface_xml(xml_text, target)
     finally:
         try:
             os.unlink(output_path)
