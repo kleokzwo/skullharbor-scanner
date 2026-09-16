@@ -22,6 +22,7 @@ class User(Base):
     entitlement = relationship("Entitlement", back_populates="user", uselist=False, cascade="all, delete-orphan")
     entitlement_installations = relationship("EntitlementInstallation", back_populates="user", cascade="all, delete-orphan")
     entitlement_audits = relationship("EntitlementLifecycleAudit", back_populates="user", cascade="all, delete-orphan")
+    engagements = relationship("Engagement", back_populates="user", cascade="all, delete-orphan")
 
 
 class Target(Base):
@@ -48,6 +49,7 @@ class Scan(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     target_id = Column(Integer, ForeignKey("targets.id"), nullable=True)
+    engagement_id = Column(Integer, ForeignKey("engagements.id"), nullable=True)
     user = relationship("User", back_populates="scans")
     verified_target = relationship("Target", back_populates="scans")
     findings = relationship("Finding", back_populates="scan", cascade="all, delete-orphan")
@@ -134,3 +136,39 @@ class EntitlementLifecycleAudit(Base):
     detail = Column(String(200), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     user = relationship("User", back_populates="entitlement_audits")
+
+
+class Engagement(Base):
+    __tablename__ = "engagements"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    reference = Column(String(120), nullable=False, unique=True, index=True)
+    customer_name = Column(String(200), nullable=False)
+    status = Column(String(30), nullable=False, default="approved", index=True)
+    valid_from = Column(DateTime, nullable=False)
+    valid_until = Column(DateTime, nullable=False)
+    approved_by = Column(String(120), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    user = relationship("User", back_populates="engagements")
+    scopes = relationship("EngagementScope", back_populates="engagement", cascade="all, delete-orphan")
+
+
+class EngagementScope(Base):
+    __tablename__ = "engagement_scopes"
+    id = Column(Integer, primary_key=True)
+    engagement_id = Column(Integer, ForeignKey("engagements.id"), nullable=False, index=True)
+    hostname = Column(String(253), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    engagement = relationship("Engagement", back_populates="scopes")
+
+
+class EngagementAudit(Base):
+    __tablename__ = "engagement_audit"
+    id = Column(Integer, primary_key=True)
+    engagement_id = Column(Integer, nullable=True, index=True)
+    actor_id = Column(String(120), nullable=False)
+    actor_role = Column(String(30), nullable=False)
+    action = Column(String(30), nullable=False)
+    reference = Column(String(120), nullable=False)
+    detail = Column(String(200), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

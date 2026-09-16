@@ -28,7 +28,12 @@ NUCLEI_CONCURRENCY = "2"
 
 # Hard execution budgets keep a stalled CLI process from blocking a job forever.
 # Values are backend policy, not customer-controlled parameters.
-PRIMARY_ADAPTER_TIMEOUT_SECONDS = 300
+# The primary web check has its own graceful per-host runtime cap.  The outer
+# process budget is only a kill-switch and is deliberately slightly larger so
+# the adapter can flush structured results instead of being killed at 5 min.
+PRIMARY_MAXTIME_SECONDS = {"free": 90, "monthly": 180}
+PRIMARY_ADAPTER_GRACE_SECONDS = 20
+PRIMARY_ADAPTER_TIMEOUT_SECONDS = 200
 SECONDARY_ADAPTER_TIMEOUT_SECONDS = 300
 SURFACE_ADAPTER_TIMEOUT_SECONDS = 90
 SURFACE_ALLOWED_PORTS = (80, 443, 8080, 8443)
@@ -301,7 +306,7 @@ def normalize_nikto(data, target):
     return findings
 
 
-def run_nikto_streaming(target, log_cb, stop_event, profile="free", timeout_seconds=PRIMARY_ADAPTER_TIMEOUT_SECONDS):
+def run_nikto_streaming(target, log_cb, stop_event, profile="free", timeout_seconds=None):
     """Internal web-scanner adapter. Return normalized customer findings."""
     try:
         policy = get_scan_profile(profile)
@@ -311,6 +316,13 @@ def run_nikto_streaming(target, log_cb, stop_event, profile="free", timeout_seco
     if not policy.self_service or not tuning:
         raise RuntimeError("Web scan profile is not available for self-service execution")
 
+    # Let the internal engine stop itself cleanly before our process-level
+    # watchdog fires.  Abruptly terminating it at the old 300-second deadline
+    # could discard the JSON result and turn an otherwise useful Quick Check
+    # into a total failure.
+    graceful_limit = PRIMARY_MAXTIME_SECONDS.get(policy.key, 90)
+    hard_limit = float(timeout_seconds) if timeout_seconds is not None else graceful_limit + PRIMARY_ADAPTER_GRACE_SECONDS
+
     fd, output_path = tempfile.mkstemp(suffix=".json")
     os.close(fd)
 
@@ -319,6 +331,7 @@ def run_nikto_streaming(target, log_cb, stop_event, profile="free", timeout_seco
         "nikto",
         "-h", target,
         "-Tuning", tuning,
+        "-maxtime", f"{graceful_limit}s",
         "-Format", "json",
         "-output", output_path,
         "-nointeractive",
@@ -334,7 +347,7 @@ def run_nikto_streaming(target, log_cb, stop_event, profile="free", timeout_seco
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     try:
-        rc = _wait_bounded(proc, stop_event, timeout_seconds)
+        rc = _wait_bounded(proc, stop_event, hard_limit)
 
         if stop_event.is_set():
             raise RuntimeError("Scan stopped by user")

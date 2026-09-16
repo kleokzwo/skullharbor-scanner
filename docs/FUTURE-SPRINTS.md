@@ -24,7 +24,7 @@ Define the server-side scan policies that use the Sprint 4 engine. Customers sel
 ### MONTHLY — SkullHarbor Advanced Check
 
 - Broader automated check using the same ScanEngine.
-- Internal Nikto policy is expanded in a controlled way to approximately five suitable tuning categories.
+- Internal primary web policy uses six controlled categories (`1,2,3,4,9,b`), including SQL-injection checks; DoS category `6` remains excluded.
 - Do not expose Nikto DoS tuning category 6 in customer self-service scans.
 - Additional internal adapters can be enabled with server-owned safe profiles.
 - The customer still sees only SkullHarbor findings/results, not underlying scanner names.
@@ -56,7 +56,7 @@ Step 2 adds a minimal local company review payload (company name/domain/intended
 
 ## Sprint 6 — License / Entitlement Authority
 
-**Status:** IN PROGRESS — Step 1 DONE.
+**Status:** COMPLETE — Steps 1–4 DONE; Sprint-6 security closeout confirmed.
 
 Central products, subscriptions, licenses, seats, installations and trial history. This is an entitlement/activation service, not a cloud scanner: scan targets, raw results and findings remain local.
 
@@ -65,6 +65,8 @@ Connect the product tiers defined in Sprint 4.1 to real entitlement state. Billi
 **DONE when:** API can reliably return ACTIVE, TRIAL, EXPIRED, NO_SEAT or BLOCKED and map valid entitlements to the correct server-owned scan profile.
 
 ## Sprint 7 — Scope / Engagement Authorization
+
+**Status:** COMPLETE — Steps 1–3 DONE; Sprint-7 security closeout confirmed.
 
 Extend the exact-host ownership model with a separate authorized-engagement workflow for professional pentesters and customer-approved third-party scopes.
 

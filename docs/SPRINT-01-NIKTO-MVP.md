@@ -168,7 +168,7 @@ Current profiles:
 
 ```text
 FREE     -> -Tuning 12
-MONTHLY  -> -Tuning 1234b (reserved for later authenticated licensing)
+MONTHLY  -> -Tuning 12349b (reserved for later authenticated licensing)
 ANNUAL   -> manual pentest engagement; not an unrestricted self-service profile
 ```
 

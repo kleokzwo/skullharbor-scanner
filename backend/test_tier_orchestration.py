@@ -38,7 +38,8 @@ def finding(rule_id, title):
 assert get_scan_profile("free").adapter_slots == ("primary",)
 assert get_scan_profile("monthly").adapter_slots == ("primary", "secondary", "surface")
 assert get_scan_profile("free").primary_tuning == "12"
-assert get_scan_profile("monthly").primary_tuning == "1234b"
+assert get_scan_profile("monthly").primary_tuning == "12349b"
+assert "9" in get_scan_profile("monthly").primary_tuning
 assert "6" not in get_scan_profile("monthly").primary_tuning
 try:
     require_self_service_profile("annual")

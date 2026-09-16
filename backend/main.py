@@ -12,7 +12,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from database import Base, SessionLocal, engine, get_db
-from models import Entitlement, EntitlementInstallation, EntitlementLifecycleAudit, Finding, Scan, Target, User, VerificationReviewAudit
+from models import Engagement, EngagementAudit, EngagementScope, Entitlement, EntitlementInstallation, EntitlementLifecycleAudit, Finding, Scan, Target, User, VerificationReviewAudit
 from scan_engine import ScanEngine
 from scan_profiles import public_product_catalog, require_self_service_profile
 
@@ -32,6 +32,8 @@ def _migrate_sqlite_mvp():
             conn.execute(text("ALTER TABLE scans ADD COLUMN scan_profile VARCHAR(30) NOT NULL DEFAULT 'free'"))
         if "target_id" not in scan_cols:
             conn.execute(text("ALTER TABLE scans ADD COLUMN target_id INTEGER"))
+        if "engagement_id" not in scan_cols:
+            conn.execute(text("ALTER TABLE scans ADD COLUMN engagement_id INTEGER"))
         if "impact" not in finding_cols:
             conn.execute(text("ALTER TABLE findings ADD COLUMN impact TEXT"))
         if "recommendation" not in finding_cols:
@@ -113,7 +115,7 @@ with SessionLocal() as _startup_db:
     if stale:
         _startup_db.commit()
 
-app = FastAPI(title="SkullHarbor UI-Scanner", version="0.6.0-dev")
+app = FastAPI(title="SkullHarbor UI-Scanner", version="0.7.0-dev")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -121,6 +123,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Development builds may load a separate trusted-authority bridge. The marker is
+# intentionally repository-level and MUST be omitted from production packaging.
+from pathlib import Path as _Path
+_DEV_AUTHORITY_ENABLED = (_Path(__file__).resolve().parent.parent / ".skullharbor-development").exists()
+
 
 _scan_engine = None  # initialized after target validation helpers are defined
 
@@ -155,6 +163,96 @@ class TrustedReviewContext(BaseModel):
 class TargetRequest(CustomerRequestModel):
     domain: str
     user_id: int | None = None
+
+
+ENGAGEMENT_TRUSTED_ROLES = {"engagement-reviewer", "admin"}
+ENGAGEMENT_TRUSTED_SOURCE = "engagement-authority"
+ENGAGEMENT_STATES = {"approved", "revoked", "expired"}
+
+
+def _validate_engagement_context(context: TrustedReviewContext) -> tuple[str, str]:
+    actor_id = (context.actor_id or "").strip()
+    actor_role = (context.actor_role or "").strip().lower()
+    if not actor_id or len(actor_id) > 120 or actor_role not in ENGAGEMENT_TRUSTED_ROLES:
+        raise HTTPException(403, "Trusted engagement authority is required")
+    if context.source != ENGAGEMENT_TRUSTED_SOURCE:
+        raise HTTPException(403, "Untrusted engagement source")
+    return actor_id, actor_role
+
+
+def _engagement_record(row: Engagement) -> dict:
+    return {
+        "id": row.id, "reference": row.reference, "customer_name": row.customer_name,
+        "status": row.status, "valid_from": row.valid_from, "valid_until": row.valid_until,
+        "scopes": sorted(scope.hostname for scope in row.scopes),
+    }
+
+
+def _approve_engagement(db: Session, user_id: int, reference: str, customer_name: str, hostnames: list[str],
+                        valid_from: datetime, valid_until: datetime, context: TrustedReviewContext) -> dict:
+    """Trusted engagement boundary. Exact hostnames only; no scan/result data is accepted."""
+    actor_id, actor_role = _validate_engagement_context(context)
+    user = _require_approved_customer(db, user_id)
+    reference = (reference or "").strip()
+    customer_name = (customer_name or "").strip()
+    if not reference or len(reference) > 120 or len(customer_name) < 2 or len(customer_name) > 200:
+        raise HTTPException(400, "Invalid engagement data")
+    if db.query(Engagement).filter(Engagement.reference == reference).first():
+        raise HTTPException(409, "Engagement reference already exists")
+    if not hostnames or len(hostnames) > 100:
+        raise HTTPException(400, "Engagement requires 1-100 exact hostnames")
+    normalized = sorted({_normalize_domain(h) for h in hostnames})
+    if len(normalized) != len(hostnames):
+        raise HTTPException(400, "Duplicate engagement hostname")
+    if valid_from.tzinfo is not None:
+        valid_from = valid_from.astimezone(UTC).replace(tzinfo=None)
+    if valid_until.tzinfo is not None:
+        valid_until = valid_until.astimezone(UTC).replace(tzinfo=None)
+    if valid_until <= valid_from or valid_until > valid_from + timedelta(days=366):
+        raise HTTPException(400, "Invalid engagement validity")
+    row = Engagement(user_id=user.id, reference=reference, customer_name=customer_name, status="approved",
+                     valid_from=valid_from, valid_until=valid_until, approved_by=actor_id)
+    db.add(row); db.flush()
+    for hostname in normalized:
+        db.add(EngagementScope(engagement_id=row.id, hostname=hostname))
+    db.add(EngagementAudit(engagement_id=row.id, actor_id=actor_id, actor_role=actor_role, action="approved",
+                           reference=reference, detail=f"{len(normalized)} exact host scope(s)"))
+    db.commit(); db.refresh(row)
+    return _engagement_record(row)
+
+
+def _set_engagement_state(db: Session, engagement_id: int, state: str, context: TrustedReviewContext) -> dict:
+    actor_id, actor_role = _validate_engagement_context(context)
+    state = (state or "").strip().lower()
+    if state not in {"revoked", "expired"}:
+        raise HTTPException(400, "Invalid engagement state transition")
+    row = db.get(Engagement, engagement_id)
+    if not row:
+        raise HTTPException(404, "Engagement not found")
+    if row.status != "approved":
+        raise HTTPException(409, "Engagement is already terminal")
+    row.status = state
+    db.add(EngagementAudit(engagement_id=row.id, actor_id=actor_id, actor_role=actor_role, action=state,
+                           reference=row.reference))
+    db.commit(); db.refresh(row)
+    return _engagement_record(row)
+
+
+def _authorized_engagement_for_scan(db: Session, hostname: str, user_id: int) -> Engagement | None:
+    # Defense in depth: callers cannot use the engagement helper to bypass the
+    # Sprint-5 customer gate, and matching always uses the canonical exact host.
+    user = db.get(User, user_id)
+    if not user or user.verification_status != "approved":
+        return None
+    try:
+        hostname = _normalize_domain(hostname)
+    except HTTPException:
+        return None
+    now = datetime.utcnow()
+    return (db.query(Engagement).join(EngagementScope)
+            .filter(Engagement.user_id == user_id, Engagement.status == "approved",
+                    Engagement.valid_from <= now, Engagement.valid_until > now,
+                    EngagementScope.hostname == hostname).first())
 
 
 def _normalize_domain(value: str) -> str:
@@ -546,6 +644,130 @@ def _require_scan_entitlement(db: Session, user: User) -> dict:
     return resolved
 
 
+def _product_ux_status(db: Session, user: User) -> dict:
+    """Customer-safe local readiness summary for Sprint 8 UX.
+
+    This composes existing policy state only. It is not an authorization gate and
+    never weakens the authoritative checks in /api/scan.
+    """
+    entitlement = _entitlement_record(db, user)
+    _migrate_legacy_verified_targets(db)
+    now = datetime.now(UTC).replace(tzinfo=None)
+    verified_targets = db.query(Target).filter(Target.user_id == user.id, Target.status == "verified").count()
+    active_engagements = db.query(Engagement).filter(
+        Engagement.user_id == user.id,
+        Engagement.status == "approved",
+        Engagement.valid_from <= now,
+        Engagement.valid_until > now,
+    ).count()
+
+    verification_ok = user.verification_status == "approved"
+    entitlement_ok = entitlement.get("status") in {"ACTIVE", "TRIAL"} and entitlement.get("scan_profile") in {"free", "monthly"}
+    scope_ok = verified_targets > 0 or active_engagements > 0
+
+    if not verification_ok:
+        next_action = "Complete customer verification before using Quick Check."
+    elif not entitlement_ok:
+        next_action = "A valid SkullHarbor product access is required."
+    elif not scope_ok:
+        next_action = "Verify a target or use an approved engagement scope."
+    else:
+        next_action = "Quick Check is ready for an authorized target."
+
+    product_key = entitlement.get("product_key")
+    product_name = {"free": "SkullHarbor Free", "monthly": "SkullHarbor Advanced", "annual": "SkullHarbor Managed Pentest"}.get(product_key)
+    return {
+        "verification": user.verification_status,
+        "access": entitlement.get("status", "BLOCKED"),
+        "product": product_name,
+        "product_key": product_key,
+        "valid_until": entitlement.get("valid_until"),
+        "authorized_targets": verified_targets,
+        "active_engagements": active_engagements,
+        "ready_for_quick_check": bool(verification_ok and entitlement_ok and scope_ok),
+        "next_action": next_action,
+    }
+
+
+
+def _migrate_legacy_verified_targets(db: Session) -> int:
+    """Attach pre-customer-bound verified targets to a deterministic local customer.
+
+    Sprint 2 allowed ownership verification before customer scoping existed.  Those
+    rows legitimately have user_id=NULL.  Prefer historical local scan provenance;
+    otherwise migrate only when exactly one local customer exists.  Ambiguous data
+    remains unassigned (fail closed).
+    """
+    changed = 0
+    legacy = db.query(Target).filter(Target.status == "verified", Target.user_id.is_(None)).all()
+    if not legacy:
+        return 0
+    all_users = db.query(User).all()
+    sole_user_id = all_users[0].id if len(all_users) == 1 else None
+
+    # A legacy database can contain several development/customer rows even though
+    # only one of them is actually allowed to use Quick Check.  That was the
+    # missing case in the earlier Sprint-8 migration.  Treat exactly one approved
+    # customer with usable self-service entitlement as deterministic provenance.
+    # This does not grant approval or a license; it only attaches an ownership
+    # proof that already succeeded before customer scoping existed.
+    eligible_user_ids = []
+    for candidate in all_users:
+        if candidate.verification_status != "approved":
+            continue
+        resolved = _entitlement_record(db, candidate)
+        if resolved.get("status") in {"ACTIVE", "TRIAL"} and resolved.get("scan_profile") in {"free", "monthly"}:
+            eligible_user_ids.append(candidate.id)
+    sole_eligible_user_id = eligible_user_ids[0] if len(eligible_user_ids) == 1 else None
+
+    for target in legacy:
+        scan_user_ids = {row[0] for row in db.query(Scan.user_id).filter(
+            Scan.target_id == target.id, Scan.user_id.isnot(None)
+        ).distinct().all()}
+        # Older scans may predate target_id provenance. Match the canonical host as
+        # a secondary local-only migration signal.
+        if not scan_user_ids:
+            for scan in db.query(Scan).filter(Scan.user_id.isnot(None)).all():
+                try:
+                    host = _normalize_domain(scan.target)
+                except Exception:
+                    continue
+                if host == target.domain:
+                    scan_user_ids.add(scan.user_id)
+        # Prefer strongest local provenance: historical scan owner, then exact
+        # company-domain match, then a single usable local product identity, and
+        # finally the old single-user fallback.  Any ambiguity remains fail-closed.
+        company_user_ids = []
+        for candidate in all_users:
+            if not candidate.company_domain:
+                continue
+            try:
+                if _normalize_domain(candidate.company_domain) == target.domain:
+                    company_user_ids.append(candidate.id)
+            except HTTPException:
+                continue
+
+        if len(scan_user_ids) == 1:
+            owner_id = next(iter(scan_user_ids))
+        elif scan_user_ids:
+            owner_id = None
+        elif len(company_user_ids) == 1:
+            owner_id = company_user_ids[0]
+        elif len(company_user_ids) > 1:
+            owner_id = None
+        elif sole_eligible_user_id is not None:
+            owner_id = sole_eligible_user_id
+        else:
+            owner_id = sole_user_id
+
+        if owner_id is not None:
+            target.user_id = owner_id
+            changed += 1
+    if changed:
+        db.commit()
+    return changed
+
+
 def _verification_record(target: Target) -> dict:
     return {
         "id": target.id,
@@ -580,15 +802,31 @@ def _txt_values(name: str) -> list[str]:
     return values
 
 
-def _authorized_target_for_scan(db: Session, hostname: str, user_id: int | None) -> Target:
+def _scan_authorization(db: Session, hostname: str, user_id: int | None) -> tuple[Target | None, Engagement | None]:
+    """Resolve one local authorization decision without a split engagement check.
+
+    Verified ownership has precedence. Otherwise the exact-host engagement row
+    returned here is the same row retained as local scan provenance.
+    """
     query = db.query(Target).filter(Target.domain == hostname, Target.status == "verified")
     if user_id is not None:
         query = query.filter(Target.user_id == user_id)
     else:
         query = query.filter(Target.user_id.is_(None))
     target = query.first()
-    if not target:
-        raise HTTPException(403, "Target is not verified. Add and verify this exact hostname before scanning.")
+    if target:
+        return target, None
+    engagement = _authorized_engagement_for_scan(db, hostname, user_id) if user_id is not None else None
+    if engagement:
+        return None, engagement
+    raise HTTPException(403, "Target requires verified ownership or an approved exact-host engagement scope.")
+
+
+def _authorized_target_for_scan(db: Session, hostname: str, user_id: int | None) -> Target | None:
+    # Compatibility helper used by existing policy tests/callers. The scan route
+    # itself uses _scan_authorization so authorization and provenance are atomic
+    # at the policy-decision level.
+    target, _engagement = _scan_authorization(db, hostname, user_id)
     return target
 
 
@@ -651,6 +889,69 @@ def update_company_profile(user_id: int, req: CompanyProfileRequest, db: Session
     return _customer_record(user)
 
 
+@app.get("/api/users/{user_id}/product-status")
+def customer_product_status(user_id: int, db: Session = Depends(get_db)):
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "Customer not found")
+    return _product_ux_status(db, user)
+
+
+@app.get("/api/product-readiness")
+def product_readiness(target: str | None = None, user_id: int | None = None, db: Session = Depends(get_db)):
+    """Target-aware local UX status without inventing customer approval.
+
+    Ownership is a property of the already-verified local target and is therefore
+    reported independently from customer/product setup.  Scan authorization is
+    still re-evaluated authoritatively by /api/scan.
+    """
+    _migrate_legacy_verified_targets(db)
+    user = db.get(User, user_id) if user_id is not None else None
+    status = _product_ux_status(db, user) if user else {
+        "verification": "missing", "access": "BLOCKED", "product": None,
+        "product_key": None, "valid_until": None, "authorized_targets": 0,
+        "active_engagements": 0, "ready_for_quick_check": False,
+        "next_action": "Set up your SkullHarbor customer profile to continue.",
+    }
+
+    hostname = None
+    ownership_verified = False
+    target_user_id = None
+    if target:
+        try:
+            hostname = _normalize_domain(target)
+        except HTTPException:
+            parsed = urlparse(target if "://" in target else f"https://{target}")
+            if parsed.hostname:
+                hostname = _normalize_domain(parsed.hostname)
+        if hostname:
+            row = db.query(Target).filter(Target.domain == hostname, Target.status == "verified").first()
+            if row:
+                ownership_verified = True
+                target_user_id = row.user_id
+
+    # A target can truthfully remain ownership-verified even before the new
+    # customer/entitlement model is configured. Do not tell the user to repeat DNS.
+    status = dict(status)
+    status["target"] = hostname
+    status["ownership_verified"] = ownership_verified
+    status["target_user_id"] = target_user_id
+    status["customer_configured"] = user is not None
+    status["ready_for_quick_check"] = bool(
+        user is not None
+        and status.get("verification") == "approved"
+        and status.get("access") in {"ACTIVE", "TRIAL"}
+        and (ownership_verified or status.get("active_engagements", 0) > 0)
+    )
+    if ownership_verified and user is None:
+        status["next_action"] = "Website ownership is verified. Set up your customer profile and product access to scan."
+    elif ownership_verified and status.get("verification") != "approved":
+        status["next_action"] = "Website ownership is verified. Customer verification is still required."
+    elif ownership_verified and status.get("access") not in {"ACTIVE", "TRIAL"}:
+        status["next_action"] = "Website ownership is verified. Activate SkullHarbor product access to scan."
+    return status
+
+
 @app.get("/api/users/{user_id}/entitlement")
 def customer_entitlement(user_id: int, db: Session = Depends(get_db)):
     user = db.get(User, user_id)
@@ -659,8 +960,17 @@ def customer_entitlement(user_id: int, db: Session = Depends(get_db)):
     return _entitlement_record(db, user)
 
 
+@app.get("/api/users/{user_id}/engagements")
+def customer_engagements(user_id: int, db: Session = Depends(get_db)):
+    if not db.get(User, user_id):
+        raise HTTPException(404, "Customer not found")
+    rows = db.query(Engagement).filter(Engagement.user_id == user_id).order_by(Engagement.id.desc()).all()
+    return [_engagement_record(row) for row in rows]
+
+
 @app.get("/api/targets")
 def targets(user_id: int | None = None, db: Session = Depends(get_db)):
+    _migrate_legacy_verified_targets(db)
     query = db.query(Target)
     if user_id is not None:
         query = query.filter(Target.user_id == user_id)
@@ -822,7 +1132,9 @@ def scan(req: ScanRequest, db: Session = Depends(get_db)):
     entitlement = _require_scan_entitlement(db, user)
     target, hostname, ips = validate_target_url(req.target)
 
-    verified_target = _authorized_target_for_scan(db, hostname, req.user_id)
+    # Resolve authorization once. This avoids a split check where an engagement
+    # could cease to authorize between the gate and local provenance lookup.
+    verified_target, engagement = _scan_authorization(db, hostname, req.user_id)
 
     # Sprint 6: the customer cannot choose a profile. The trusted entitlement
     # decision maps to a server-owned policy before any local scan starts.
@@ -835,7 +1147,8 @@ def scan(req: ScanRequest, db: Session = Depends(get_db)):
         status="queued",
         scan_profile=policy.key,
         user_id=req.user_id,
-        target_id=verified_target.id,
+        target_id=verified_target.id if verified_target else None,
+        engagement_id=engagement.id if engagement else None,
     )
     db.add(record)
     db.commit()
@@ -849,5 +1162,12 @@ def scan(req: ScanRequest, db: Session = Depends(get_db)):
         "scan_id": record.id,
         "status": "queued",
         "scan_profile": record.scan_profile,
-        "target_id": verified_target.id,
+        "target_id": verified_target.id if verified_target else None,
+        "authorization": "verified-ownership" if verified_target else "approved-engagement",
+        "engagement_reference": engagement.reference if engagement else None,
     }
+
+
+if _DEV_AUTHORITY_ENABLED:
+    from dev_authority import register_dev_authority
+    register_dev_authority(app, __import__(__name__))

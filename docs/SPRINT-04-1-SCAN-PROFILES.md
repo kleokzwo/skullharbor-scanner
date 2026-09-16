@@ -12,7 +12,7 @@ server-side to the FREE policy.
 ### Product policies
 
 - **FREE / SkullHarbor Quick Check** — self-service; deliberately limited scan depth; primary internal web check only; primary tuning categories 1 and 2.
-- **MONTHLY / SkullHarbor Advanced Check** — self-service once entitlement exists; primary + secondary internal checks; controlled primary tuning `1,2,3,4,b`; DoS tuning category 6 is excluded.
+- **MONTHLY / SkullHarbor Advanced Check** — self-service once entitlement exists; primary + secondary internal checks; controlled primary tuning `1,2,3,4,9,b`; DoS tuning category 6 is excluded.
 - **ANNUAL / SkullHarbor Managed Pentest** — not executable as a self-service scan; contact `hello@skullharbor.org`; two manually coordinated pentests per year.
 
 Concrete scanner names remain backend implementation details and are not present in the public product catalog.
@@ -49,7 +49,7 @@ The original internal tool set is now represented behind the private ScanEngine 
 
 ### MONTHLY
 
-- Controlled primary web check with five approved tuning categories (`1,2,3,4,b`); DoS category 6 remains excluded.
+- Controlled primary web check with six approved tuning categories (`1,2,3,4,9,b`); DoS category 6 remains excluded.
 - Additional bounded web-security checks with intrusive/DoS/fuzz/bruteforce classes excluded.
 - Bounded TCP web-surface discovery on the fixed server-owned port set 80, 443, 8080 and 8443.
 - Surface discovery uses connect scanning only; no scripts, UDP scan, OS detection, version detection or customer-controlled port range.
@@ -85,7 +85,7 @@ Sprint 4.1 is closed with an end-to-end policy regression that verifies the Scan
 | SkullHarbor Advanced Check / MONTHLY | Self-service after trusted entitlement exists | Primary expanded bounded web check + additional bounded web checks + fixed web-surface discovery | No |
 | SkullHarbor Managed Pentest / ANNUAL | Managed engagement | No unrestricted self-service execution; two coordinated pentests/year | No |
 
-The MONTHLY primary policy remains limited to the five approved categories `1,2,3,4,b`; DoS category 6 remains excluded. Web-surface discovery remains fixed to TCP 80/443/8080/8443 and cannot be widened by the customer.
+The MONTHLY primary policy remains limited to the six approved categories `1,2,3,4,9,b`; DoS category 6 remains excluded. Web-surface discovery remains fixed to TCP 80/443/8080/8443 and cannot be widened by the customer.
 
 ### Closeout security assertions
 

@@ -28,8 +28,8 @@ _PROFILES = {
         public_name="SkullHarbor Advanced Check",
         self_service=True,
         adapter_slots=("primary", "secondary", "surface"),
-        # Controlled expansion: five categories; DoS category 6 is excluded.
-        primary_tuning="1234b",
+        # Controlled paid expansion: includes SQL-injection checks (9); DoS category 6 is excluded.
+        primary_tuning="12349b",
     ),
     "annual": ScanProfile(
         key="annual",

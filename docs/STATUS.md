@@ -1,9 +1,9 @@
 # Current Status
 
 **Project:** SkullHarbor UI-Scanner  
-**Current sprint:** Sprint 6 — License / Entitlement Authority  
-**Build:** v0.6.0-dev  
-**Status:** SPRINT 4 COMPLETE / SPRINT 4.1 COMPLETE / SPRINT 5 COMPLETE / SPRINT 6 STEP 1 COMPLETE / SPRINT 6 STEP 2 COMPLETE / SPRINT 6 STEP 3 COMPLETE / SPRINT 6 COMPLETE
+**Current sprint:** Sprint 8 — Product UX  
+**Build:** v0.8.0-dev  
+**Status:** SPRINT 4 COMPLETE / SPRINT 4.1 COMPLETE / SPRINT 5 COMPLETE / SPRINT 6 STEP 1 COMPLETE / SPRINT 6 STEP 2 COMPLETE / SPRINT 6 STEP 3 COMPLETE / SPRINT 6 COMPLETE / SPRINT 7 STEP 1 COMPLETE
 
 ## Completed foundations
 
@@ -103,9 +103,29 @@ FastAPI validates the request and verified target, creates a queued scan record 
 - Dedicated Sprint-6 security closeout regression added.
 - **SPRINT 6 COMPLETE.**
 
+## Sprint 7 — Step 1 — Trusted Engagement Scope Foundation
+
+- Added a separate trusted engagement authorization model for professional/customer-approved third-party scopes.
+- Engagement approval is internal-only and requires an approved SkullHarbor customer plus an `engagement-reviewer`/`admin` actor from the exact `engagement-authority` source.
+- Scope entries are exact normalized hostnames only; no wildcard/subdomain inheritance is granted.
+- Engagements have explicit validity windows and approved/revoked/expired lifecycle semantics.
+- Scan authorization now accepts either the existing verified exact-host ownership record or a currently approved exact-host engagement scope for the same user.
+- Customer engagement API is read-only; no customer self-approval/mutation endpoint exists.
+- Engagement/audit storage contains no scans, findings, raw scanner output, DNS verification secrets or scanner controls.
+- `test_engagement_authorization.py` adds positive/negative scope, trust, expiry, revocation, boundary and minimization regression coverage.
+
+## Sprint 7 — Step 2 — Authorization Hardening & Local Provenance
+
+- Engagement authorization independently rechecks Sprint-5 customer approval.
+- Exact-host matching is canonicalized again at the authorization boundary; malformed hosts fail closed.
+- Local scans retain the authorizing `engagement_id` when engagement scope is used.
+- Engagement authority/audit storage remains free of scan IDs, targets, findings, raw output and scanner data.
+- Invalid lifecycle transitions remain non-mutating and do not create audit decisions.
+- `test_engagement_hardening.py` adds defense-in-depth and provenance regression coverage.
+
 ## Next
 
-Do not begin the next sprint until Sprint 6 closeout is confirmed on the target machine.
+Sprint 7 Step 3 only after Step 2 is confirmed on the target machine.
 
 
 ## Sprint 4.1 — Scan Profiles & Product Tiers
@@ -138,3 +158,50 @@ Do not begin the next sprint until Sprint 6 closeout is confirmed on the target 
 - Customer request cannot select or escalate tier, scanners, tuning or raw flags.
 - Sprint 4.1 Definition of Done is satisfied.
 - Next sprint: Sprint 5 — Customer / Company Verification.
+
+## Sprint 7 — Step 3 / Closeout
+
+- Scan authorization now resolves verified ownership or approved engagement scope in one local policy decision.
+- The engagement returned by that decision is the same engagement retained as local scan provenance, avoiding a split-check authorization gap.
+- Verified ownership takes precedence when both authorization paths exist.
+- Cross-customer scope reuse and revoked engagement reuse fail closed.
+- Engagement authority/audit storage remains free of scan IDs, findings, raw output, scanner data and DNS verification secrets.
+- `test_sprint7_security_closeout.py` adds Sprint-7 closeout coverage.
+- **SPRINT 7 COMPLETE.**
+
+## Next
+
+Sprint 8 — Product UX. Do not begin it as part of the Sprint-7 closeout.
+
+## Sprint 8 — Step 1 — Dashboard Access & Readiness
+
+- Product UX starts with the roadmap's mobile-first dashboard.
+- Added a customer-safe local product/readiness summary combining existing verification, entitlement and scope state.
+- Dashboard presents Customer / Product access / Authorized scope in plain SkullHarbor language.
+- Start Scan is UX-disabled until readiness is satisfied, while `/api/scan` remains the authoritative security gate.
+- Header product badge is resolved from entitlement instead of hard-coded FREE.
+- Readiness summary exposes counts/status only; no target hostname, scan ID, finding, raw output, scanner identity or DNS secret is added.
+- No cloud scan path or central scan-data flow introduced.
+- `test_product_ux_step1.py` added.
+- **Sprint 8 Step 2 implementation complete; awaiting target-machine regression confirmation before Step 2.**
+
+- Sprint 8 Step 2 Fix 4: legacy verified targets retain ownership through deterministic local migration; no repeated DNS challenge.
+- Sprint 8 Step 2 Fix 5: multi-profile legacy ownership migration now uses deterministic historical/company/eligible-customer provenance; added full upgrade integration regression. Step 2 still awaits target-machine confirmation.
+
+## Sprint 8 — Step 2 runtime closeout Fix 9
+
+- Fixed the target-machine five-minute Quick Check failure after successful authorization.
+- FREE primary web check now receives a 90-second graceful internal runtime cap; MONTHLY receives 180 seconds.
+- The process watchdog remains backend-owned and fires only after a 20-second grace window, so structured results can be flushed instead of discarded by an abrupt 300-second kill.
+- Cancellation and authorization behavior are unchanged.
+- Added `test_quick_check_runtime_budget.py`; regression baseline is 28 tests.
+
+
+## Product policy refinement — current
+
+- FREE primary depth: `1,2`.
+- MONTHLY primary depth: `1,2,3,4,9,b`; SQL-injection category `9` is explicitly included.
+- DoS category `6` remains excluded from every customer self-service tier.
+- MONTHLY retains controlled secondary web checks and bounded web-surface discovery; destructive/intrusive/fuzz/bruteforce classes remain excluded from automatic customer scans.
+- ANNUAL remains a managed pentest, not an unrestricted automated scanner tier.
+- Public/marketing presentation describes security coverage and customer benefit only; internal scanner brands, tuning codes and CLI details remain private implementation details.
