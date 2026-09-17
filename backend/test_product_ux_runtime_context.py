@@ -11,13 +11,13 @@ db=SessionLocal()
 try:
     db.add(Target(domain='skullharbor.org', verification_token='old-proof', status='verified', verified_at=datetime.utcnow(), user_id=None))
     db.commit()
-    # mirror endpoint composition without requiring a user: ownership is still a true fact
+    # A legacy proof may exist, but without an active matching customer it must not authorize scanning
     row=db.query(Target).filter(Target.domain=='skullharbor.org',Target.status=='verified').first()
     assert row is not None and row.user_id is None
     # endpoint source must explicitly preserve this state instead of claiming re-verification
     src=open('main.py',encoding='utf-8').read()
     assert '@app.get("/api/product-readiness")' in src
-    assert 'ownership_verified = True' in src
+    assert 'ownership_verified = bool(user is not None and row.user_id == user.id)' in src
     assert 'Website ownership is verified. Set up your customer profile and product access to scan.' in src
     ui=open('../frontend/src/main.jsx',encoding='utf-8').read()
     assert '/api/product-readiness?' in ui

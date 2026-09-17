@@ -1,4 +1,7 @@
 import ipaddress
+import base64
+import os
+import uuid
 import secrets
 import socket
 from datetime import UTC, datetime, timedelta
@@ -15,6 +18,9 @@ from database import Base, SessionLocal, engine, get_db
 from models import Engagement, EngagementAudit, EngagementScope, Entitlement, EntitlementInstallation, EntitlementLifecycleAudit, Finding, Scan, Target, User, VerificationReviewAudit
 from scan_engine import ScanEngine
 from scan_profiles import public_product_catalog, require_self_service_profile
+from activation_gateway import exchange_activation_code
+from entitlement_signing import verify_entitlement
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 Base.metadata.create_all(bind=engine)
 
@@ -163,6 +169,75 @@ class TrustedReviewContext(BaseModel):
 class TargetRequest(CustomerRequestModel):
     domain: str
     user_id: int | None = None
+
+
+class ActivationRequest(CustomerRequestModel):
+    activation_code: str
+
+
+def _installation_id() -> str:
+    configured = os.getenv("SKULLHARBOR_INSTALLATION_ID", "").strip()
+    if configured:
+        return configured
+    path = _Path(os.getenv("SKULLHARBOR_DATA_DIR", str(_Path.home() / ".skullharbor"))) / "installation-id"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        value = path.read_text().strip()
+        if 8 <= len(value) <= 120:
+            return value
+    value = "sh-" + uuid.uuid4().hex
+    path.write_text(value)
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+    return value
+
+
+def _bound_workspace_user(db: Session) -> User | None:
+    """Return the customer bound to this installation in production.
+
+    Development builds intentionally keep explicit multi-customer switching for
+    isolation testing. Production never chooses a customer from arbitrary local
+    rows, targets, scans, e-mail addresses, or request-supplied IDs.
+    """
+    if _DEV_AUTHORITY_ENABLED:
+        return None
+    installation_id = _installation_id()
+    binding = db.query(EntitlementInstallation).filter(
+        EntitlementInstallation.installation_id == installation_id,
+        EntitlementInstallation.status == "active",
+    ).first()
+    return db.get(User, binding.user_id) if binding else None
+
+
+def _require_workspace_customer(db: Session, user_id: int | None) -> User:
+    """Fail closed when a production request names any customer except the
+    customer cryptographically activated/bound to this installation.
+    """
+    if _DEV_AUTHORITY_ENABLED:
+        return _require_approved_customer(db, user_id)
+    bound = _bound_workspace_user(db)
+    if not bound or user_id is None or bound.id != user_id:
+        # Do not disclose whether another local customer row exists.
+        raise HTTPException(403, "This installation is not activated for that customer")
+    if bound.verification_status != "approved":
+        raise HTTPException(403, "Customer verification is required")
+    return bound
+
+
+def _activation_public_key() -> Ed25519PublicKey:
+    raw = os.getenv("SKULLHARBOR_ENTITLEMENT_PUBLIC_KEY", "").strip()
+    if not raw:
+        raise HTTPException(503, "Production activation is not configured")
+    try:
+        padding = "=" * (-len(raw) % 4)
+        key = base64.urlsafe_b64decode(raw + padding)
+        if len(key) != 32:
+            raise ValueError
+        return Ed25519PublicKey.from_public_bytes(key)
+    except Exception as exc:
+        raise HTTPException(503, "Production activation key is invalid") from exc
 
 
 ENGAGEMENT_TRUSTED_ROLES = {"engagement-reviewer", "admin"}
@@ -844,8 +919,66 @@ def products():
     return public_product_catalog()
 
 
+@app.post("/api/activation")
+def activate_installation(req: ActivationRequest, db: Session = Depends(get_db)):
+    """Exchange a one-time Authority code and cache only signed/minimal access state."""
+    installation_id = _installation_id()
+    try:
+        response = exchange_activation_code(req.activation_code, installation_id)
+        grant = verify_entitlement(response["entitlement"], _activation_public_key(), installation_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+
+    customer = response.get("customer")
+    required = {"name", "email", "company_name", "company_domain", "verification_status"}
+    if not isinstance(customer, dict) or set(customer) != required or customer.get("verification_status") != "approved":
+        raise HTTPException(403, "Authority did not return an approved customer")
+    email = str(customer.get("email") or "").strip().lower()
+    if not email or len(email) > 255:
+        raise HTTPException(400, "Invalid Authority customer")
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        user = User(name=str(customer["name"])[:120], email=email)
+        db.add(user); db.flush()
+    user.name = str(customer["name"])[:120]
+    user.company_name = str(customer["company_name"])[:200]
+    user.company_domain = str(customer["company_domain"])[:253]
+    user.verification_status = "approved"
+    user.verification_updated_at = datetime.utcnow()
+
+    ent = db.query(Entitlement).filter(Entitlement.user_id == user.id).first()
+    if not ent:
+        ent = Entitlement(user_id=user.id, product_key=grant["product_key"], authority_status="blocked")
+        db.add(ent)
+    ent.product_key = grant["product_key"]
+    ent.authority_status = grant["status"].lower()
+    ent.license_id = grant["license_id"]
+    ent.seat_limit = grant["seat_limit"]
+    ent.issued_at = datetime.fromisoformat(grant["issued_at"].replace("Z", "+00:00")).replace(tzinfo=None)
+    ent.valid_until = datetime.fromisoformat(grant["valid_until"].replace("Z", "+00:00")).replace(tzinfo=None)
+    ent.source = "entitlement-authority"
+    ent.updated_at = datetime.utcnow()
+    binding = db.query(EntitlementInstallation).filter(EntitlementInstallation.installation_id == installation_id).first()
+    if binding and binding.user_id != user.id:
+        raise HTTPException(409, "This installation is already assigned to another customer")
+    if not binding:
+        db.add(EntitlementInstallation(user_id=user.id, installation_id=installation_id, status="active"))
+    else:
+        binding.status, binding.released_at = "active", None
+    db.commit(); db.refresh(user)
+    return {"customer": _customer_record(user), "product_status": _entitlement_record(db, user)}
+
+
 @app.get("/api/users")
 def users(db: Session = Depends(get_db)):
+    # Production is a single-customer installation. Historical/local rows are
+    # never exposed as selectable identities after activation. Development keeps
+    # the explicit multi-customer list solely for isolation testing.
+    if not _DEV_AUTHORITY_ENABLED:
+        bound = _bound_workspace_user(db)
+        return [_customer_record(bound)] if bound else []
     return [_customer_record(u) for u in db.query(User).order_by(User.name).all()]
 
 
@@ -891,9 +1024,7 @@ def update_company_profile(user_id: int, req: CompanyProfileRequest, db: Session
 
 @app.get("/api/users/{user_id}/product-status")
 def customer_product_status(user_id: int, db: Session = Depends(get_db)):
-    user = db.get(User, user_id)
-    if not user:
-        raise HTTPException(404, "Customer not found")
+    user = _require_workspace_customer(db, user_id)
     return _product_ux_status(db, user)
 
 
@@ -906,7 +1037,10 @@ def product_readiness(target: str | None = None, user_id: int | None = None, db:
     still re-evaluated authoritatively by /api/scan.
     """
     _migrate_legacy_verified_targets(db)
-    user = db.get(User, user_id) if user_id is not None else None
+    if user_id is not None:
+        user = _require_workspace_customer(db, user_id)
+    else:
+        user = None if _DEV_AUTHORITY_ENABLED else _bound_workspace_user(db)
     status = _product_ux_status(db, user) if user else {
         "verification": "missing", "access": "BLOCKED", "product": None,
         "product_key": None, "valid_until": None, "authorized_targets": 0,
@@ -927,8 +1061,10 @@ def product_readiness(target: str | None = None, user_id: int | None = None, db:
         if hostname:
             row = db.query(Target).filter(Target.domain == hostname, Target.status == "verified").first()
             if row:
-                ownership_verified = True
                 target_user_id = row.user_id
+                # Ownership is customer-scoped. A verified domain owned by a
+                # different customer must NEVER make this workspace scan-ready.
+                ownership_verified = bool(user is not None and row.user_id == user.id)
 
     # A target can truthfully remain ownership-verified even before the new
     # customer/entitlement model is configured. Do not tell the user to repeat DNS.
@@ -971,9 +1107,8 @@ def customer_engagements(user_id: int, db: Session = Depends(get_db)):
 @app.get("/api/targets")
 def targets(user_id: int | None = None, db: Session = Depends(get_db)):
     _migrate_legacy_verified_targets(db)
-    query = db.query(Target)
-    if user_id is not None:
-        query = query.filter(Target.user_id == user_id)
+    user = _require_workspace_customer(db, user_id)
+    query = db.query(Target).filter(Target.user_id == user.id)
     return [_verification_record(t) for t in query.order_by(Target.id.desc()).all()]
 
 
@@ -981,12 +1116,19 @@ def targets(user_id: int | None = None, db: Session = Depends(get_db)):
 def create_target(req: TargetRequest, db: Session = Depends(get_db)):
     domain = _normalize_domain(req.domain)
     _resolve_public_ips(domain)
-    if req.user_id is not None and not db.get(User, req.user_id):
-        raise HTTPException(400, "Unknown user_id")
+    # Target enrollment is customer-scoped and plan-gated. A FREE trial may
+    # authorize exactly one website; additional self-service websites require
+    # Advanced. This gate is backend-authoritative, not a UI convention.
+    user = _require_workspace_customer(db, req.user_id)
+    entitlement = _require_scan_entitlement(db, user)
+    if entitlement.get("scan_profile") == "free":
+        existing_count = db.query(Target).filter(Target.user_id == user.id).count()
+        if existing_count >= 1:
+            raise HTTPException(403, "Free Trial supports one authorized website. Upgrade to Advanced to add another website.")
     existing = db.query(Target).filter(Target.domain == domain).first()
     if existing:
         if req.user_id is not None and existing.user_id not in {None, req.user_id}:
-            raise HTTPException(409, "Target already belongs to another customer")
+            raise HTTPException(409, "This domain is already registered to another SkullHarbor customer. If you believe this domain belongs to your organization, please contact support at hello@skullharbor.org.")
         return _verification_record(existing)
     target = Target(
         domain=domain,
@@ -1001,10 +1143,12 @@ def create_target(req: TargetRequest, db: Session = Depends(get_db)):
 
 
 @app.post("/api/targets/{target_id}/verify")
-def verify_target(target_id: int, db: Session = Depends(get_db)):
-    target = db.get(Target, target_id)
+def verify_target(target_id: int, user_id: int, db: Session = Depends(get_db)):
+    _require_workspace_customer(db, user_id)
+    target = db.query(Target).filter(Target.id == target_id, Target.user_id == user_id).first()
 
     if not target:
+        # Do not disclose whether the id belongs to another customer.
         raise HTTPException(404, "Target not found")
 
     # Domain must still resolve only to public IP addresses.
@@ -1049,8 +1193,9 @@ def verify_target(target_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/api/scans")
-def scans(db: Session = Depends(get_db)):
-    rows = db.query(Scan).order_by(Scan.id.desc()).limit(50).all()
+def scans(user_id: int, db: Session = Depends(get_db)):
+    _require_workspace_customer(db, user_id)
+    rows = db.query(Scan).filter(Scan.user_id == user_id).order_by(Scan.id.desc()).limit(50).all()
     return [{
         "id": s.id,
         "target": s.target,
@@ -1066,8 +1211,9 @@ def scans(db: Session = Depends(get_db)):
 
 
 @app.get("/api/scans/{scan_id}")
-def scan_detail(scan_id: int, db: Session = Depends(get_db)):
-    s = db.get(Scan, scan_id)
+def scan_detail(scan_id: int, user_id: int, db: Session = Depends(get_db)):
+    _require_workspace_customer(db, user_id)
+    s = db.query(Scan).filter(Scan.id == scan_id, Scan.user_id == user_id).first()
     if not s:
         raise HTTPException(404, "Scan not found")
     return {
@@ -1099,13 +1245,14 @@ def scan_detail(scan_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/api/scans/{scan_id}/status")
-def scan_status(scan_id: int, db: Session = Depends(get_db)):
+def scan_status(scan_id: int, user_id: int, db: Session = Depends(get_db)):
+    _require_workspace_customer(db, user_id)
+    s = db.query(Scan).filter(Scan.id == scan_id, Scan.user_id == user_id).first()
+    if not s:
+        raise HTTPException(404, "Scan not found")
     snap = _scan_engine.snapshot(scan_id)
     if snap:
         return snap
-    s = db.get(Scan, scan_id)
-    if not s:
-        raise HTTPException(404, "Scan not found")
     return {
         "scan_id": scan_id,
         "status": s.status,
@@ -1118,7 +1265,10 @@ def scan_status(scan_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/scans/{scan_id}/stop")
-def stop_scan(scan_id: int):
+def stop_scan(scan_id: int, user_id: int, db: Session = Depends(get_db)):
+    _require_workspace_customer(db, user_id)
+    if not db.query(Scan).filter(Scan.id == scan_id, Scan.user_id == user_id).first():
+        raise HTTPException(404, "Active scan not found")
     if not _scan_engine.stop(scan_id):
         raise HTTPException(404, "Active scan not found")
     return {"status": "stopping"}
@@ -1128,7 +1278,7 @@ def stop_scan(scan_id: int):
 def scan(req: ScanRequest, db: Session = Depends(get_db)):
     # Fail closed before any target parsing/DNS work. Unapproved customers must
     # not reach the protected scan authorization path at all.
-    user = _require_approved_customer(db, req.user_id)
+    user = _require_workspace_customer(db, req.user_id)
     entitlement = _require_scan_entitlement(db, user)
     target, hostname, ips = validate_target_url(req.target)
 
@@ -1171,3 +1321,19 @@ def scan(req: ScanRequest, db: Session = Depends(get_db)):
 if _DEV_AUTHORITY_ENABLED:
     from dev_authority import register_dev_authority
     register_dev_authority(app, __import__(__name__))
+
+# Sprint 8 / Step 6: when the production frontend has been built, the local
+# backend serves it from the same loopback process used by the clickable desktop
+# launcher. API routes are registered above this mount and remain authoritative.
+from fastapi.staticfiles import StaticFiles as _StaticFiles
+from fastapi.responses import FileResponse as _FileResponse
+
+_FRONTEND_DIST = _Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if _FRONTEND_DIST.is_dir():
+    _ASSETS = _FRONTEND_DIST / "assets"
+    if _ASSETS.is_dir():
+        app.mount("/assets", _StaticFiles(directory=str(_ASSETS)), name="frontend-assets")
+
+    @app.get("/", include_in_schema=False)
+    def _desktop_index():
+        return _FileResponse(str(_FRONTEND_DIST / "index.html"))

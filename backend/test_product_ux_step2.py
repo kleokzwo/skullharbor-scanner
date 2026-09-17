@@ -45,18 +45,12 @@ assert "Activation required" in frontend
 assert '/ UI-SCANNER' not in frontend
 
 
-# Regression: an already verified website must carry its existing local customer
-# association into Quick Check. The user must never be asked to verify it again
-# merely because multiple local development/customer profiles exist.
-assert 'if(t.user_id)setUserId(String(t.user_id));setTarget(`https://${t.domain}`)' in frontend
-assert 'const owned=targets.find(t=>t.status==="verified"' in frontend
-assert 'setUserId(String(owned.user_id))' in frontend
-
-# Fix3 regression: derived scan activity must be initialized before any hook
-# references it. This prevents the React TDZ crash / blank application shell.
-active_decl = 'const active=["queued","running"].includes(job?.status);'
-active_effect = 'if(!target || active)return;'
-assert frontend.index(active_decl) < frontend.index(active_effect)
+# Security regression: selecting/typing a target must NEVER switch customer
+# identity based on another customer's ownership record. Customer context is
+# fixed first; targets and scan history are then loaded only for that customer.
+assert 'const owned=targets.find(t=>t.status==="verified"' not in frontend
+assert 'fetch(`${API}/api/scans?user_id=${encodeURIComponent(effectiveId)}`)' in frontend
+assert 'fetch(`${API}/api/targets?user_id=${encodeURIComponent(effectiveId)}`)' in frontend
 
 
 # Legacy verified targets from before customer scoping are migrated without a

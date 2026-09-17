@@ -38,6 +38,31 @@ function fmtTime(total=0){
 
 function severityClass(level){ return `severity-${level || "info"}`; }
 function statusClass(status){ return `status-${status || "completed"}`; }
+function daysRemaining(validUntil){
+  if(!validUntil) return null;
+  const end=new Date(validUntil);
+  if(Number.isNaN(end.getTime())) return null;
+  return Math.max(0,Math.ceil((end.getTime()-Date.now())/86400000));
+}
+function customerPlanState(status){
+  const access=(status?.access||"").toUpperCase();
+  const key=(status?.product_key||status?.scan_profile||"").toLowerCase();
+  const remaining=daysRemaining(status?.valid_until);
+  if(access==="TRIAL" && key==="free") return {title:"SkullHarbor Free Trial",badge:remaining===null?"Trial":remaining===1?"1 day left":`${remaining} days left`,tone:"trial",detail:remaining===0?"Trial ends today":`Free Trial · ${remaining ?? "—"} days left`};
+  if(access==="ACTIVE" && key==="monthly") return {title:"SkullHarbor Advanced",badge:"Active",tone:"active",detail:"Advanced · Active"};
+  if(access==="EXPIRED") return {title:key==="monthly"?"SkullHarbor Advanced":"SkullHarbor Free Trial",badge:"Expired",tone:"inactive",detail:"Plan expired"};
+  if(access==="NO_SEAT") return {title:key==="monthly"?"SkullHarbor Advanced":"SkullHarbor",badge:"Seat required",tone:"inactive",detail:"Plan needs attention"};
+  return {title:key==="monthly"?"SkullHarbor Advanced":key==="free"?"SkullHarbor Free Trial":"No active plan",badge:"Inactive",tone:"inactive",detail:"Activation required"};
+}
+function customerStage(stage){
+  const labels={queued:"Preparing check",authorizing:"Confirming authorization","web-security":"Checking website",processing:"Reviewing results",saving:"Saving results",completed:"Check complete",stopping:"Stopping check",stopped:"Check stopped",failed:"Check could not complete"};
+  return labels[stage] || "Running security checks";
+}
+function resultHeadline(findings=[]){
+  if(findings.some(f=>f.severity==="critical"||f.severity==="high")) return "Important issues need attention";
+  if(findings.length) return "Review your security findings";
+  return "No findings in this Quick Check";
+}
 
 function Brand(){
   return <div className="flex items-center gap-2.5 whitespace-nowrap font-extrabold tracking-tight text-slate-950">
@@ -64,7 +89,7 @@ function Sidebar({page,setPage}){
       {item("dashboard","Dashboard","home")}
       {item("scans","Scans","doc")}
       {item("targets","Targets","shield")}
-      <button className="nav-item"><Icon name="gear"/>Settings</button>
+      {item("settings","Settings","gear")}
       <button className="nav-item"><Icon name="info"/>About</button>
     </nav>
     <div className="sidebar-foot">LOCAL SECURITY<br/>WORKSPACE</div>
@@ -73,7 +98,16 @@ function Sidebar({page,setPage}){
 
 function MobileNav({page,setPage}){
   const item=(id,label,icon)=><button onClick={()=>setPage(id)} className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${page===id?"bg-blue-50 font-semibold text-blue-600":"text-slate-500"}`}><Icon name={icon} className="h-4 w-4"/>{label}</button>;
-  return <div className="border-b border-slate-200 bg-white px-3 py-2 lg:hidden"><div className="flex gap-1 overflow-x-auto">{item("dashboard","Dashboard","home")}{item("scans","Scans","doc")}{item("targets","Targets","shield")}</div></div>;
+  return <div className="border-b border-slate-200 bg-white px-3 py-2 lg:hidden"><div className="flex gap-1 overflow-x-auto">{item("dashboard","Dashboard","home")}{item("scans","Scans","doc")}{item("targets","Targets","shield")}{item("settings","Settings","gear")}</div></div>;
+}
+
+function PlanCard({title,subtitle,features,current=false,emphasized=false}){
+  return <article className={`relative rounded-[20px] border bg-white p-5 ${emphasized?"border-emerald-300 shadow-[0_12px_30px_rgba(15,23,42,.06)]":"border-slate-200"}`}>
+    {current&&<span className="absolute right-4 top-4 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-emerald-700">Current</span>}
+    <h4 className="pr-16 text-base font-extrabold text-slate-950">{title}</h4><p className="mt-1 min-h-[40px] text-xs leading-5 text-slate-500">{subtitle}</p>
+    <div className="my-4 border-t border-slate-100"/>
+    <ul className="space-y-3">{features.map(([included,label])=><li key={label} className={`flex items-start gap-2 text-xs leading-5 ${included?"text-slate-700":"text-slate-400"}`}><span className={`mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full text-[10px] font-black ${included?"bg-emerald-50 text-emerald-700":"bg-slate-100 text-slate-400"}`}>{included?"✓":"—"}</span><span>{label}</span></li>)}</ul>
+  </article>;
 }
 
 function App(){
@@ -93,19 +127,43 @@ function App(){
   const [readiness,setReadiness]=useState(null);
   const [setup,setSetup]=useState({name:"",email:"",company_name:"",company_domain:"",intended_use:"Authorized security testing of systems owned or explicitly authorized by my organization."});
   const [devAuthority,setDevAuthority]=useState(false);
+  const [devChecked,setDevChecked]=useState(false);
+  const [workspaceLoaded,setWorkspaceLoaded]=useState(false);
   const [activationBusy,setActivationBusy]=useState(false);
+  const [activationProduct,setActivationProduct]=useState("");
+  const [activationCode,setActivationCode]=useState("");
   const pollRef=useRef(null);
   const active=["queued","running"].includes(job?.status);
 
   const refresh=async()=>{
-    const [u,s,t]=await Promise.all([fetch(`${API}/api/users`),fetch(`${API}/api/scans`),fetch(`${API}/api/targets`)]);
+    const u=await fetch(`${API}/api/users`);
     const userRows=await u.json();
-    setUsers(userRows); setScans(await s.json()); setTargets(await t.json());
-    if(!userId && userRows.length===1) setUserId(String(userRows[0].id));
+    setUsers(userRows);
+    setWorkspaceLoaded(true);
+    // Production has one customer. Development may contain historical rows;
+    // never infer/switch identity from another customer's targets or scans.
+    let effectiveId=userId;
+    if(!effectiveId && userRows.length){
+      const approved=userRows.find(row=>row.verification_status==="approved");
+      const chosen=approved || userRows[0];
+      effectiveId=chosen?.id?String(chosen.id):"";
+      if(effectiveId) setUserId(effectiveId);
+    }
+    if(!effectiveId){setScans([]);setTargets([]);return;}
+    const [s,t]=await Promise.all([
+      fetch(`${API}/api/scans?user_id=${encodeURIComponent(effectiveId)}`),
+      fetch(`${API}/api/targets?user_id=${encodeURIComponent(effectiveId)}`)
+    ]);
+    if(!s.ok||!t.ok) throw new Error("Could not load customer workspace");
+    setScans(await s.json()); setTargets(await t.json());
   };
-  useEffect(()=>{refresh().catch(e=>setError(e.message));fetch(`${API}/internal/development-authority/status`).then(r=>{if(r.ok)setDevAuthority(true)}).catch(()=>{});return()=>clearInterval(pollRef.current)},[]);
+  useEffect(()=>{refresh().catch(e=>setError(e.message));fetch(`${API}/internal/development-authority/status`).then(r=>{if(r.ok)setDevAuthority(true)}).catch(()=>{}).finally(()=>setDevChecked(true));return()=>clearInterval(pollRef.current)},[]);
   useEffect(()=>{
-    if(!userId){setProductStatus(null);return;}
+    if(!userId){setProductStatus(null);setScans([]);setTargets([]);return;}
+    Promise.all([
+      fetch(`${API}/api/scans?user_id=${encodeURIComponent(userId)}`).then(r=>r.ok?r.json():Promise.reject(new Error("Could not load scans"))),
+      fetch(`${API}/api/targets?user_id=${encodeURIComponent(userId)}`).then(r=>r.ok?r.json():Promise.reject(new Error("Could not load targets")))
+    ]).then(([scanRows,targetRows])=>{setScans(scanRows);setTargets(targetRows)}).catch(e=>setError(e.message));
     fetch(`${API}/api/users/${userId}/product-status`).then(async r=>{const data=await r.json();if(!r.ok)throw new Error(data.detail||"Could not load product status");setProductStatus(data)}).catch(e=>setError(e.message));
   },[userId,targets.length,scans.length]);
   useEffect(()=>{
@@ -114,16 +172,13 @@ function App(){
     if(userId)q.set("user_id",userId);
     fetch(`${API}/api/product-readiness?${q.toString()}`).then(async r=>{const data=await r.json();if(!r.ok)throw new Error(data.detail||"Could not load readiness");setReadiness(data)}).catch(e=>setError(e.message));
   },[target,userId,targets.length,scans.length]);
-  // A verified target already belongs to one local customer profile. Reuse that
-  // association instead of asking the user to select/re-verify it again.
+  // Page-scoped feedback must never leak into another workspace/menu.
+  // Authorization/verification errors belong only to the action/page that produced them.
   useEffect(()=>{
-    if(!target || active)return;
-    try{
-      const host=new URL(target.includes("://")?target:`https://${target}`).hostname.toLowerCase().replace(/\.$/,"");
-      const owned=targets.find(t=>t.status==="verified" && t.domain.toLowerCase().replace(/\.$/,"")===host);
-      if(owned?.user_id && String(owned.user_id)!==String(userId)) setUserId(String(owned.user_id));
-    }catch{}
-  },[target,targets,userId,active]);
+    setError("");
+    setTargetMessage("");
+  },[page]);
+
   useEffect(()=>{
     const onPopState=()=>setFinding(null);
     window.addEventListener("popstate",onPopState);
@@ -131,14 +186,14 @@ function App(){
   },[]);
 
   const loadDetail=async(id)=>{
-    const r=await fetch(`${API}/api/scans/${id}`); const data=await r.json();
+    const r=await fetch(`${API}/api/scans/${id}?user_id=${encodeURIComponent(userId)}`); const data=await r.json();
     if(!r.ok) throw new Error(data.detail||"Could not load scan");
     setSelected(data); setFinding(null);
   };
   const pollJob=(id)=>{
     clearInterval(pollRef.current);
     const tick=async()=>{try{
-      const r=await fetch(`${API}/api/scans/${id}/status`); const data=await r.json(); setJob(data);
+      const r=await fetch(`${API}/api/scans/${id}/status?user_id=${encodeURIComponent(userId)}`); const data=await r.json(); setJob(data);
       if(["completed","failed","stopped"].includes(data.status)){
         clearInterval(pollRef.current); await refresh(); await loadDetail(id);
       }
@@ -152,12 +207,12 @@ function App(){
       setJob({scan_id:data.scan_id,status:data.status||"queued",stage:"queued",progress:5,logs:[],elapsed_seconds:0,scan_profile:data.scan_profile}); pollJob(data.scan_id);
     }catch(e){setError(e.message)}
   };
-  const stop=async()=>{if(job?.scan_id) await fetch(`${API}/api/scans/${job.scan_id}/stop`,{method:"POST"})};
+  const stop=async()=>{if(job?.scan_id) await fetch(`${API}/api/scans/${job.scan_id}/stop?user_id=${encodeURIComponent(userId)}`,{method:"POST"})};
   const openScan=async(id)=>{setJob(null);clearInterval(pollRef.current);await loadDetail(id)};
 
   const addTarget=async(e)=>{e.preventDefault();setError("");setTargetMessage("");
     try{const r=await fetch(`${API}/api/targets`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({domain:newDomain,user_id:userId?Number(userId):null})});const data=await r.json();if(!r.ok)throw new Error(typeof data.detail==="string"?data.detail:JSON.stringify(data.detail));setNewDomain("");setTargetMessage("Target added. Add the DNS TXT record shown below, then click Verify.");await refresh();}catch(e){setError(e.message)}};
-  const verifyTarget=async(id)=>{setError("");setTargetMessage("");try{const r=await fetch(`${API}/api/targets/${id}/verify`,{method:"POST"});const data=await r.json();if(!r.ok){const d=data.detail;throw new Error(typeof d==="string"?d:(d?.message||"Verification failed"));}setTargetMessage(`${data.domain} is verified and can now be scanned.`);await refresh();}catch(e){setError(e.message)}};
+  const verifyTarget=async(id)=>{setError("");setTargetMessage("");try{const r=await fetch(`${API}/api/targets/${id}/verify?user_id=${encodeURIComponent(userId)}`,{method:"POST"});const data=await r.json();if(!r.ok){const d=data.detail;throw new Error(typeof d==="string"?d:(d?.message||"Verification failed"));}setTargetMessage(`${data.domain} is verified and can now be scanned.`);await refresh();}catch(e){setError(e.message)}};
   const copyText=async(text)=>{try{await navigator.clipboard.writeText(text);setTargetMessage("Copied to clipboard.")}catch{setTargetMessage("Copy failed. Select the value manually.")}};
 
   const submitCustomerSetup=async(e)=>{e.preventDefault();setError("");
@@ -173,15 +228,23 @@ function App(){
     }catch(e){setError(e.message)}
   };
 
-  const activateDevelopmentAccess=async()=>{setError("");setActivationBusy(true);
+  const activateProduction=async()=>{setError("");setActivationBusy(true);
+    try{
+      const r=await fetch(`${API}/api/activation`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({activation_code:activationCode})});
+      const data=await r.json();if(!r.ok)throw new Error(typeof data.detail==="string"?data.detail:"Activation failed");
+      setActivationCode("");await refresh();
+    }catch(e){setError(e.message)}finally{setActivationBusy(false)}
+  };
+
+  const activateDevelopmentAccess=async(product="free")=>{setError("");setActivationBusy(true);setActivationProduct(product);
     try{
       if(!userId) throw new Error("Choose a customer profile first");
-      const r=await fetch(`${API}/internal/development-authority/users/${userId}/approve-trial`,{method:"POST"});
+      const r=await fetch(`${API}/internal/development-authority/users/${userId}/access/${product}`,{method:"POST"});
       const data=await r.json();if(!r.ok)throw new Error(typeof data.detail==="string"?data.detail:JSON.stringify(data.detail));
       setProductStatus(data);await refresh();
       const q=new URLSearchParams();if(target)q.set("target",target);q.set("user_id",userId);
       const rr=await fetch(`${API}/api/product-readiness?${q.toString()}`);setReadiness(await rr.json());setPage("dashboard");
-    }catch(e){setError(e.message)}finally{setActivationBusy(false)}
+    }catch(e){setError(e.message)}finally{setActivationBusy(false);setActivationProduct("")}
   };
 
   const findings=selected?.findings||[];
@@ -191,6 +254,17 @@ function App(){
   const openFinding=(f)=>{setFinding(f);window.history.pushState({findingId:f.id},"",`#finding-${f.id}`);window.scrollTo({top:0,behavior:"smooth"})};
   const closeFinding=()=>{setFinding(null);if(window.location.hash.startsWith("#finding-")) window.history.back();else window.scrollTo({top:0,behavior:"smooth"})};
   const moveFinding=(delta)=>{const next=findings[findingIndex+delta];if(!next)return;setFinding(next);window.history.replaceState({findingId:next.id},"",`#finding-${next.id}`);window.scrollTo({top:0,behavior:"smooth"})};
+
+  if(workspaceLoaded && devChecked && users.length===0 && !devAuthority){
+    return <div className="min-h-screen bg-slate-50"><Header productStatus={null}/><main className="px-4 py-12 sm:px-7 lg:py-20"><div className="mx-auto max-w-[880px]">
+      <p className="eyebrow">FIRST RUN</p><h1 className="mt-2 text-[40px] font-black leading-none tracking-[-.045em] text-slate-950 sm:text-[54px]">Welcome to SkullHarbor.</h1>
+      <p className="mt-4 max-w-2xl text-base leading-7 text-slate-500">This installation is not activated yet. SkullHarbor requires an approved organization before security checks can be used.</p>
+      <section className="mt-8 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-soft"><div className="grid lg:grid-cols-[.9fr_1.1fr]">
+        <div className="bg-slate-950 p-7 text-white sm:p-9"><div className="grid h-12 w-12 place-items-center rounded-2xl bg-white/10"><Icon name="shield"/></div><h2 className="mt-6 text-2xl font-extrabold">Get ready in three steps</h2><div className="mt-7 space-y-5 text-sm"><div className="flex gap-3"><span className="step-dot">1</span><span><b className="block">Register your organization</b><small className="text-slate-400">Company registration happens before the approved download.</small></span></div><div className="flex gap-3"><span className="step-dot">2</span><span><b className="block">Wait for approval</b><small className="text-slate-400">SkullHarbor verifies customer access before activation.</small></span></div><div className="flex gap-3"><span className="step-dot">3</span><span><b className="block">Activate this installation</b><small className="text-slate-400">Activation binds approved product access to this installation.</small></span></div></div></div>
+        <div className="p-7 sm:p-9"><div className="rounded-2xl border border-amber-200 bg-amber-50 p-5"><div className="text-sm font-extrabold text-amber-900">Activation required</div><p className="mt-2 text-sm leading-6 text-amber-800">No approved SkullHarbor customer is bound to this installation. Security checks remain locked.</p></div><h3 className="mt-7 text-lg font-extrabold text-slate-950">Already approved?</h3><p className="mt-2 text-sm leading-6 text-slate-500">Enter the one-time activation code issued for your approved organization. SkullHarbor sends only the code and this installation identifier to the trusted Authority — never targets, scans or findings.</p><label className="mt-5 block text-xs font-bold uppercase tracking-wider text-slate-500">Activation code</label><input value={activationCode} onChange={e=>setActivationCode(e.target.value)} autoComplete="off" spellCheck="false" placeholder="Enter activation code" className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-400"/><button onClick={activateProduction} disabled={activationBusy||activationCode.trim().length<8} className="primary-action mt-4 disabled:cursor-not-allowed disabled:opacity-50">{activationBusy?"Activating…":"Activate SkullHarbor"}</button>{error&&<div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}<p className="mt-3 text-xs leading-5 text-slate-400">Activation fails closed if the Authority is unavailable, the code is invalid, or the signed entitlement does not match this installation.</p></div>
+      </div></section><p className="mt-6 text-xs text-slate-400">Targets, scans and findings stay on this device.</p>
+    </div></main></div>;
+  }
 
   if(finding){
     return <div className="min-h-screen bg-slate-50">
@@ -210,7 +284,7 @@ function App(){
               </div>
               <div className="grid border-t border-slate-200 sm:grid-cols-3">
                 <div className="p-5 sm:px-7"><div className="text-xs text-slate-400">Target</div><div className="mt-1 break-all text-sm font-semibold">{finding.url||selected?.target}</div></div>
-                <div className="border-t border-slate-200 p-5 sm:border-l sm:border-t-0 sm:px-7"><div className="text-xs text-slate-400">Detected by</div><div className="mt-1 text-sm font-semibold">SkullHarbor Web Check</div></div>
+                <div className="border-t border-slate-200 p-5 sm:border-l sm:border-t-0 sm:px-7"><div className="text-xs text-slate-400">Security check</div><div className="mt-1 text-sm font-semibold">SkullHarbor Quick Check</div></div>
                 <div className="border-t border-slate-200 p-5 sm:border-l sm:border-t-0 sm:px-7"><div className="text-xs text-slate-400">Scan date</div><div className="mt-1 text-sm font-semibold">{selected?.created_at?new Date(selected.created_at).toLocaleString():"—"}</div></div>
               </div>
             </section>
@@ -222,13 +296,11 @@ function App(){
             </div>
 
             <section className="card mt-4 overflow-hidden">
-              <DetailRow icon="code" title="Technical details"><div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><div><div className="text-xs font-bold uppercase tracking-wider text-slate-400">Category</div><div className="mt-1 text-sm font-semibold text-slate-700">{finding.category||"General"}</div></div><div><div className="text-xs font-bold uppercase tracking-wider text-slate-400">Rule</div><div className="mt-1 break-all font-mono text-xs text-slate-500">{finding.rule_id||"web.unclassified"}</div></div></div><div><div className="font-semibold text-slate-700">Evidence</div><p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-500">{finding.evidence||"No additional evidence was returned."}</p></div></div></DetailRow>
-              <DetailRow icon="doc" title="Raw technical evidence"><pre className="whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 text-xs leading-6 text-slate-600">{finding.raw_output||finding.evidence||"No raw output stored for this finding."}</pre></DetailRow>
+              <DetailRow icon="code" title="Evidence & details"><div className="space-y-4"><div><div className="text-xs font-bold uppercase tracking-wider text-slate-400">Category</div><div className="mt-1 text-sm font-semibold text-slate-700">{finding.category||"General"}</div></div><div><div className="font-semibold text-slate-700">Observed evidence</div><p className="mt-2 whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">{finding.evidence||"No additional evidence was returned."}</p></div></div></DetailRow>
               <DetailRow icon="link" title="References"><p className="break-words text-sm leading-6 text-slate-500">{finding.reference||"No external reference is available for this finding."}</p></DetailRow>
             </section>
 
-            <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <button type="button" onClick={()=>alert("False-positive reporting will be connected in a later sprint.")} className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-300 bg-white px-4 py-3 text-sm font-semibold text-red-600 hover:bg-red-50"><Icon name="trash" className="h-4 w-4"/>Report as false positive</button>
+            <div className="mt-6 flex justify-end">
               <div className="grid grid-cols-2 gap-2 sm:flex">
                 <button onClick={()=>moveFinding(-1)} disabled={findingIndex<=0} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-500 disabled:opacity-40"><Icon name="arrow-left" className="h-4 w-4"/>Previous finding</button>
                 <button onClick={()=>moveFinding(1)} disabled={findingIndex<0||findingIndex>=findings.length-1} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-500 disabled:opacity-40">Next finding<Icon name="arrow-right" className="h-4 w-4"/></button>
@@ -263,7 +335,7 @@ function App(){
       <section className="mt-8"><div className="flex items-center justify-between"><div><h2 className="text-xl font-extrabold tracking-tight text-slate-950">Your websites</h2><p className="mt-1 text-sm text-slate-500">Verified websites are ready for Quick Check.</p></div></div>
       {customerTargets.length===0?<div className="mt-4 rounded-[22px] border border-dashed border-slate-300 bg-white/60"><Empty title="No websites yet" text="Add your first authorized website above."/></div>:<div className="mt-4 space-y-3">{customerTargets.map(t=><article key={t.id} className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm"><div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6"><div className="flex min-w-0 items-center gap-4"><span className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${t.status==="verified"?"bg-emerald-50 text-emerald-700":"bg-amber-50 text-amber-700"}`}><Icon name={t.status==="verified"?"check":"globe"}/></span><div className="min-w-0"><div className="truncate font-extrabold text-slate-950">{t.domain}</div><div className="mt-1 text-xs text-slate-400">{t.status==="verified"?"Ownership verified · Ready for Quick Check":"Verification required"}</div></div></div><span className={`pill ${t.status==="verified"?"bg-emerald-50 text-emerald-700":"bg-amber-50 text-amber-700"}`}>{t.status==="verified"?"Verified":"Waiting for DNS"}</span></div>
         {t.status!=="verified"&&<div className="border-t border-slate-100 bg-slate-50/70 p-5 sm:p-6"><div className="mb-4"><div className="text-sm font-extrabold text-slate-900">Add this TXT record to your DNS</div><p className="mt-1 text-xs leading-5 text-slate-500">DNS updates can take a little while. Keep this page open or come back later and verify again.</p></div><div className="grid gap-3 lg:grid-cols-2"><DnsValue label="Host / Name" value={t.verification_name} copy={()=>copyText(t.verification_name)}/><DnsValue label="TXT value" value={t.verification_value} copy={()=>copyText(t.verification_value)}/></div><div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><span className="text-xs text-slate-400">Already added the record?</span><button type="button" onClick={()=>verifyTarget(t.id)} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white hover:bg-slate-800"><Icon name="check" className="h-4 w-4"/>Verify ownership</button></div></div>}
-        {t.status==="verified"&&<div className="flex items-center justify-between gap-3 border-t border-slate-100 px-5 py-4 sm:px-6"><span className="text-xs text-slate-400">Ownership is verified. Product access is checked before scanning.</span><button type="button" onClick={()=>{if(t.user_id)setUserId(String(t.user_id));setTarget(`https://${t.domain}`);setPage("dashboard")}} className="inline-flex items-center gap-2 text-sm font-bold text-blue-600">Continue <Icon name="arrow-right" className="h-4 w-4"/></button></div>}
+        {t.status==="verified"&&<div className="flex items-center justify-between gap-3 border-t border-slate-100 px-5 py-4 sm:px-6"><span className="text-xs text-slate-400">Ownership is verified. Product access is checked before scanning.</span><button type="button" onClick={()=>{setTarget(`https://${t.domain}`);setPage("dashboard")}} className="inline-flex items-center gap-2 text-sm font-bold text-blue-600">Continue <Icon name="arrow-right" className="h-4 w-4"/></button></div>}
       </article>)}</div>}</section>
     </div></main></div></div>;
   }
@@ -272,8 +344,45 @@ function App(){
     const current=users.find(u=>String(u.id)===String(userId));
     return <div className="min-h-screen bg-slate-50"><Header productStatus={productStatus}/><MobileNav page={page} setPage={setPage}/><div className="flex min-h-[calc(100vh-70px)]"><Sidebar page={page} setPage={setPage}/><main className="workspace min-w-0 flex-1 px-4 py-7 sm:px-7 lg:px-10 lg:py-10"><div className="mx-auto max-w-[820px]"><p className="eyebrow">CUSTOMER VERIFICATION</p><h1 className="product-title">Verify your organization</h1><p className="product-subtitle">SkullHarbor protects powerful security checks with verified customer access.</p>
       <section className="card mt-7 p-6 sm:p-8">
-        {current?<><div className="flex items-center justify-between gap-4"><div><h2 className="text-xl font-extrabold">{current.company_name||current.name}</h2><p className="mt-1 text-sm text-slate-500">{current.email}</p></div><span className={`pill ${current.verification_status==="approved"?"bg-emerald-50 text-emerald-700":"bg-amber-50 text-amber-700"}`}>{current.verification_status}</span></div><div className="mt-6 rounded-2xl bg-slate-50 p-5"><b className="text-sm">{current.verification_status==="approved"?"Identity verified":"Verification pending"}</b><p className="mt-1 text-sm leading-6 text-slate-500">{current.verification_status==="approved"?"Your organization has been approved by SkullHarbor.":"Your profile is saved. Approval is performed by a trusted SkullHarbor reviewer; the desktop app cannot approve itself."}</p></div>{devAuthority&&<div className="mt-5 rounded-2xl border border-violet-200 bg-violet-50 p-5"><div className="text-[11px] font-extrabold uppercase tracking-[.12em] text-violet-600">Development build</div><h3 className="mt-1 text-base font-extrabold text-slate-950">Trusted test authority</h3><p className="mt-1 text-sm leading-6 text-slate-600">For local product development only. This performs the same trusted review and issues a bounded 7-day FREE trial. It is excluded from production packaging.</p><button type="button" disabled={activationBusy} onClick={activateDevelopmentAccess} className="secondary-action mt-4">{activationBusy?"Activating…":"Approve & activate test access"} <Icon name="arrow-right" className="h-4 w-4"/></button></div>}</>:<form onSubmit={submitCustomerSetup} className="space-y-4"><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-bold">Your name<input required value={setup.name} onChange={e=>setSetup({...setup,name:e.target.value})} className="mt-2 h-12 w-full rounded-xl border border-slate-300 px-4 font-medium"/></label><label className="text-sm font-bold">Work email<input required type="email" value={setup.email} onChange={e=>setSetup({...setup,email:e.target.value})} className="mt-2 h-12 w-full rounded-xl border border-slate-300 px-4 font-medium"/></label></div><label className="block text-sm font-bold">Organization<input required value={setup.company_name} onChange={e=>setSetup({...setup,company_name:e.target.value})} className="mt-2 h-12 w-full rounded-xl border border-slate-300 px-4 font-medium"/></label><label className="block text-sm font-bold">Organization domain<input required placeholder="company.com" value={setup.company_domain} onChange={e=>setSetup({...setup,company_domain:e.target.value})} className="mt-2 h-12 w-full rounded-xl border border-slate-300 px-4 font-medium"/></label><label className="block text-sm font-bold">Authorized use<textarea required minLength="10" value={setup.intended_use} onChange={e=>setSetup({...setup,intended_use:e.target.value})} className="mt-2 min-h-[110px] w-full rounded-xl border border-slate-300 p-4 font-medium"/></label><button className="primary-action w-full sm:w-auto">Submit for verification <Icon name="arrow-right" className="h-4 w-4"/></button></form>}
+        {current?<><div className="flex items-center justify-between gap-4"><div><h2 className="text-xl font-extrabold">{current.company_name||current.name}</h2><p className="mt-1 text-sm text-slate-500">{current.email}</p></div><span className={`pill ${current.verification_status==="approved"?"bg-emerald-50 text-emerald-700":"bg-amber-50 text-amber-700"}`}>{current.verification_status}</span></div><div className="mt-6 rounded-2xl bg-slate-50 p-5"><b className="text-sm">{current.verification_status==="approved"?"Identity verified":"Verification pending"}</b><p className="mt-1 text-sm leading-6 text-slate-500">{current.verification_status==="approved"?"Your organization has been approved by SkullHarbor.":"Your profile is saved. Approval is performed by a trusted SkullHarbor reviewer; the desktop app cannot approve itself."}</p></div>{devAuthority&&<div className="mt-5 rounded-2xl border border-violet-200 bg-violet-50 p-5"><div className="text-[11px] font-extrabold uppercase tracking-[.12em] text-violet-600">Development build</div><h3 className="mt-1 text-base font-extrabold text-slate-950">Trusted test authority</h3><p className="mt-1 text-sm leading-6 text-slate-600">For local product development only. Choose the product policy you want to validate. This control is excluded from production packaging.</p><div className="mt-4 flex flex-wrap gap-3"><button type="button" disabled={activationBusy} onClick={()=>activateDevelopmentAccess("free")} className="secondary-action">{activationBusy&&activationProduct==="free"?"Activating…":"Use FREE test access"}</button><button type="button" disabled={activationBusy} onClick={()=>activateDevelopmentAccess("monthly")} className="primary-action">{activationBusy&&activationProduct==="monthly"?"Activating…":"Use MONTHLY test access"} <Icon name="arrow-right" className="h-4 w-4"/></button></div></div>}</>:<form onSubmit={submitCustomerSetup} className="space-y-4"><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-bold">Your name<input required value={setup.name} onChange={e=>setSetup({...setup,name:e.target.value})} className="mt-2 h-12 w-full rounded-xl border border-slate-300 px-4 font-medium"/></label><label className="text-sm font-bold">Work email<input required type="email" value={setup.email} onChange={e=>setSetup({...setup,email:e.target.value})} className="mt-2 h-12 w-full rounded-xl border border-slate-300 px-4 font-medium"/></label></div><label className="block text-sm font-bold">Organization<input required value={setup.company_name} onChange={e=>setSetup({...setup,company_name:e.target.value})} className="mt-2 h-12 w-full rounded-xl border border-slate-300 px-4 font-medium"/></label><label className="block text-sm font-bold">Organization domain<input required placeholder="company.com" value={setup.company_domain} onChange={e=>setSetup({...setup,company_domain:e.target.value})} className="mt-2 h-12 w-full rounded-xl border border-slate-300 px-4 font-medium"/></label><label className="block text-sm font-bold">Authorized use<textarea required minLength="10" value={setup.intended_use} onChange={e=>setSetup({...setup,intended_use:e.target.value})} className="mt-2 min-h-[110px] w-full rounded-xl border border-slate-300 p-4 font-medium"/></label><button className="primary-action w-full sm:w-auto">Submit for verification <Icon name="arrow-right" className="h-4 w-4"/></button></form>}
       </section>{error&&<div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}<button onClick={()=>setPage("dashboard")} className="mt-5 text-sm font-bold text-blue-600">← Back to Quick Check</button></div></main></div></div>;
+  }
+
+  if(page==="settings"){
+    const current=users.find(u=>String(u.id)===String(userId));
+    const currentKey=(productStatus?.product_key||productStatus?.scan_profile||readiness?.product_key||readiness?.scan_profile||"").toLowerCase();
+    const isAdvanced=currentKey==="monthly";
+    const accessState=(productStatus?.access||readiness?.access||"BLOCKED").toUpperCase();
+    const organizationApproved=current?.verification_status==="approved";
+    const advancedActive=isAdvanced && accessState==="ACTIVE";
+    const validUntil=productStatus?.valid_until||readiness?.valid_until;
+    const planState=customerPlanState({...readiness,...productStatus,valid_until:validUntil});
+    const planTitle=planState.title;
+    const planDescription=isAdvanced?"Advanced Security Check with deeper controlled web-security coverage.":currentKey==="free"?"Quick Check access for the 7-day evaluation period.":"Product access is not currently active for this organization.";
+    return <div className="min-h-screen bg-slate-50"><Header productStatus={productStatus}/><MobileNav page={page} setPage={setPage}/><div className="flex min-h-[calc(100vh-70px)]"><Sidebar page={page} setPage={setPage}/><main className="workspace min-w-0 flex-1 px-4 py-7 sm:px-7 lg:px-10 lg:py-10"><div className="mx-auto max-w-[900px]">
+      <p className="eyebrow">SETTINGS</p><h1 className="product-title">Account & plan</h1><p className="product-subtitle">Your organization is verified once. Changing plan never creates another profile.</p>
+      <section className="card mt-7 p-6 sm:p-8"><div className="text-xs font-extrabold uppercase tracking-[.12em] text-slate-400">Organization</div><div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-extrabold text-slate-950">{current?.company_name||current?.name||"No organization selected"}</h2><p className="mt-1 text-sm text-slate-500">{current?.email||"No work email available"}</p>{current?.company_domain&&<p className="mt-1 text-xs text-slate-400">{current.company_domain}</p>}</div><span className={`pill ${organizationApproved?"bg-emerald-50 text-emerald-700":"bg-amber-50 text-amber-700"}`}>{organizationApproved?"Verified organization":current?"Verification pending":"Organization not configured"}</span></div><div className="mt-5 rounded-xl bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">Your company identity, verified websites and authorization records stay with this account when you upgrade. You do not register again.</div></section>
+      <section className="card mt-5 p-6 sm:p-8"><div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between"><div><div className="text-xs font-extrabold uppercase tracking-[.12em] text-slate-400">PLAN & BILLING</div><h2 className="mt-1 text-xl font-extrabold text-slate-950">{planTitle}</h2><p className="mt-2 text-sm leading-6 text-slate-500">{planDescription}</p>{validUntil&&<p className="mt-2 text-xs font-semibold text-slate-400">{accessState==="TRIAL"?"Trial ends":"Current access through"} {new Date(validUntil).toLocaleDateString()}</p>}</div><div className="flex flex-col items-start gap-2 sm:items-end"><span className={`pill ${planState.tone==="active"?"bg-emerald-50 text-emerald-700":planState.tone==="trial"?"bg-blue-50 text-blue-700":"bg-slate-100 text-slate-600"}`}>{planState.badge}</span>{advancedActive&&<button type="button" disabled className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-400">Manage subscription · coming later</button>}</div></div>
+      {!isAdvanced&&<div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><b className="text-base text-slate-950">Upgrade to Advanced</b><p className="mt-1 max-w-xl text-sm leading-6 text-slate-500">Keep the same organization and authorized websites. Only your SkullHarbor product access changes.</p></div>{devAuthority?<button type="button" disabled={activationBusy||!userId} onClick={()=>activateDevelopmentAccess("monthly")} className="primary-action shrink-0">{activationBusy&&activationProduct==="monthly"?"Activating…":"Test Advanced upgrade"} <Icon name="arrow-right" className="h-4 w-4"/></button>:<button type="button" disabled className="primary-action shrink-0 opacity-60">Upgrade to Advanced</button>}</div></div>}
+      {advancedActive&&<div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-sm leading-6 text-emerald-800"><b>Advanced is active.</b> Your existing organization verification and authorized websites were kept unchanged.</div>}
+      {isAdvanced&&!advancedActive&&<div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm leading-6 text-slate-700"><b>Advanced is not active.</b> Existing organization and authorization data remain stored locally; inactive access cannot start new scans.</div>}
+      <div className="mt-7 border-t border-slate-200 pt-7"><div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><div className="text-xs font-extrabold uppercase tracking-[.12em] text-slate-400">COMPARE ACCESS</div><h3 className="mt-1 text-lg font-extrabold text-slate-950">Choose the coverage you need</h3></div><p className="max-w-md text-xs leading-5 text-slate-500">Your organization and authorized websites stay the same. Only security-check coverage changes.</p></div>
+      <div className="mt-5 grid gap-4 lg:grid-cols-3">
+        <PlanCard title="Free Trial" subtitle="Try the core Quick Check for 7 days." current={currentKey==="free"} features={[
+          [true,"Common file and configuration checks"],[true,"Authorized website checks"],[true,"Local scan execution"],[false,"Deeper web-security coverage"],[false,"SQL injection checks"],[false,"Public-service exposure checks"]
+        ]}/>
+        <PlanCard title="Advanced" subtitle="Broader controlled coverage for ongoing use." current={isAdvanced} emphasized features={[
+          [true,"Everything in Free"],[true,"Information disclosure checks"],[true,"Injection and XSS checks"],[true,"SQL injection checks"],[true,"Software identification"],[true,"Public-service exposure checks"]
+        ]}/>
+        <PlanCard title="Custom / Yearly" subtitle="Managed pentest engagement with an agreed scope." features={[
+          [true,"Agreed customer-specific scope"],[true,"Manual security testing"],[true,"Engagement authorization"],[true,"Contract-based delivery"],[false,"Self-service automated tier"],[false,"Unrestricted disruptive testing"]
+        ]}/>
+      </div></div>
+      </section>
+      <section className="card mt-5 p-6 sm:p-8"><div className="text-xs font-extrabold uppercase tracking-[.12em] text-slate-400">CUSTOM / YEARLY</div><h2 className="mt-1 text-lg font-extrabold text-slate-950">Managed pentest engagement</h2><p className="mt-2 text-sm leading-6 text-slate-500">Custom yearly work is handled separately with an agreed scope and contract. It is not an unrestricted automated scanner tier.</p></section>
+      {devAuthority&&<details className="mt-5 rounded-[22px] border border-violet-200 bg-violet-50 p-6 sm:p-8"><summary className="cursor-pointer text-sm font-extrabold text-violet-700">Development testing controls</summary><p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">Internal only. Simulate entitlement changes for this same customer. Production packaging excludes this control.</p>{users.length>1&&<label className="mt-4 block max-w-md text-xs font-bold text-violet-800">Development customer workspace<select value={userId} onChange={e=>{setUserId(e.target.value);setTarget("");setSelected(null);setFinding(null);setJob(null);setScans([]);setTargets([]);}} className="mt-2 h-11 w-full rounded-xl border border-violet-200 bg-white px-3 text-sm font-semibold text-slate-800">{users.map(u=><option key={u.id} value={u.id}>{u.company_name||u.name} · {u.email}</option>)}</select></label>}<div className="mt-4 flex flex-wrap gap-3"><button type="button" disabled={activationBusy||!userId} onClick={()=>activateDevelopmentAccess("free")} className="secondary-action">Use FREE test access</button><button type="button" disabled={activationBusy||!userId} onClick={()=>activateDevelopmentAccess("monthly")} className="secondary-action">Use MONTHLY test access</button></div></details>}
+      {error&&<div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+    </div></main></div></div>;
   }
 
   if(page==="scans"){
@@ -312,9 +421,9 @@ function App(){
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex gap-3">
                 <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-emerald-600 text-white"><Icon name="check" className="h-6 w-6"/></span>
-                <div><h2 className="text-xl font-extrabold">{selected.status==="completed"?"Scan completed":"Scan result"}</h2><p className="mt-1 break-all text-sm text-slate-500">{selected.target}</p></div>
+                <div><h2 className="text-xl font-extrabold">{selected.status==="completed"?resultHeadline(findings):"Check result"}</h2><p className="mt-1 break-all text-sm text-slate-500">{selected.target}</p></div>
               </div>
-              <div className="text-left text-xs text-slate-400 sm:text-right"><div>{selected.created_at?new Date(selected.created_at).toLocaleString():""}</div><div className="mt-1">Profile: {selected.scan_profile||"Free"} · Engine: SkullHarbor Web Check</div></div>
+              <div className="text-left text-xs text-slate-400 sm:text-right"><div>{selected.created_at?new Date(selected.created_at).toLocaleString():""}</div><div className="mt-1">{selected.scan_profile==="monthly"?"Advanced Security Check":"Quick Check"}</div></div>
             </div>
             <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-5">
               {LEVELS.map(level=><div key={level} className={`severity-tile ${severityClass(level)}`}><div className="text-2xl font-black">{counts[level]}</div><div className="mt-1 text-xs font-bold capitalize">{level}</div></div>)}
@@ -326,7 +435,7 @@ function App(){
               <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
                 <h2 className="text-xl font-extrabold">Findings {selected?`(${findings.length})`:""}</h2>
               </div>
-              {active?<Empty title="Scan in progress" text="Results appear here when the scan is finished."/>:!selected?<Empty title="Select a scan" text="Choose a recent scan to review its findings."/>:findings.length===0?<Empty title="No findings" text="No security findings were returned."/>:<div>{findings.map(f=><button key={f.id} onClick={()=>openFinding(f)} className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-slate-100 px-5 py-4 text-left transition last:border-b-0 hover:bg-slate-50"><span className={`pill ${severityClass(f.severity)}`}>{f.severity}</span><span className="min-w-0"><b className="block truncate text-sm text-slate-900">{f.title}</b><small className="mt-1 block truncate text-xs text-slate-400">{f.description||"General web security information"}</small></span><span className="inline-flex items-center gap-1 rounded-xl border-2 border-emerald-500 px-3 py-2 text-sm font-bold text-blue-600">View <Icon name="chevron" className="h-4 w-4"/></span></button>)}</div>}
+              {active?<Empty title="Scan in progress" text="Results appear here when the scan is finished."/>:!selected?<Empty title="Select a scan" text="Choose a recent scan to review its findings."/>:findings.length===0?<Empty title="No findings in this check" text="Nothing actionable was detected by this check. This is not a guarantee that the website has no vulnerabilities."/>:<div>{findings.map(f=><button key={f.id} onClick={()=>openFinding(f)} className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-slate-100 px-5 py-4 text-left transition last:border-b-0 hover:bg-slate-50"><span className={`pill ${severityClass(f.severity)}`}>{f.severity}</span><span className="min-w-0"><b className="block truncate text-sm text-slate-900">{f.title}</b><small className="mt-1 block truncate text-xs text-slate-400">{f.description||"General web security information"}</small></span><span className="inline-flex items-center gap-1 rounded-xl border-2 border-emerald-500 px-3 py-2 text-sm font-bold text-blue-600">View <Icon name="chevron" className="h-4 w-4"/></span></button>)}</div>}
             </div>
 
             <div className="card overflow-hidden">
@@ -351,15 +460,16 @@ function ProductReadiness({users,userId,setUserId,status,goTargets,goSetup}){
   const accessOk=["ACTIVE","TRIAL"].includes(status?.access);
   const scopeOk=!!status && (status.ownership_verified || status.authorized_targets+status.active_engagements>0);
   const allReady=verificationOk&&accessOk&&scopeOk;
-  const item=(label,ok,waiting)=><div className={`readiness-item ${ok?"is-ready":""}`}><span className="readiness-icon"><Icon name={ok?"check":"clock"} className="h-4 w-4"/></span><span><b>{label}</b><small>{ok?"Ready":waiting}</small></span></div>;
+  const planState=customerPlanState(status);
+  const item=(label,ok,waiting,readyText="Ready")=><div className={`readiness-item ${ok?"is-ready":""}`}><span className="readiness-icon"><Icon name={ok?"check":"clock"} className="h-4 w-4"/></span><span><b>{label}</b><small>{ok?readyText:waiting}</small></span></div>;
   return <section className={`readiness-panel mt-7 ${allReady?"is-complete":""}`}>
     <div className="readiness-head">
       <div><p className="eyebrow">QUICK CHECK STATUS</p><h2>{allReady?"Ready to scan":scopeOk?"Website verified":"Setup required"}</h2><p>{status?.next_action || (users.length?"Choose your customer profile.":"Set up your SkullHarbor customer profile to continue.")}</p></div>
-      {users.length>0&&<select aria-label="Customer profile" value={userId} onChange={e=>setUserId(e.target.value)} className="profile-select"><option value="">Choose profile</option>{users.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select>}
+      {users.length>0&&<div className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-right"><div className="text-[10px] font-extrabold uppercase tracking-[.12em] text-slate-400">Organization</div><div className="mt-0.5 text-sm font-bold text-slate-800">{users.find(u=>String(u.id)===String(userId))?.company_name||users.find(u=>String(u.id)===String(userId))?.name||"SkullHarbor customer"}</div></div>}
     </div>
     <div className="readiness-grid">
       {item("Identity",verificationOk,"Verification required")}
-      {item("Product access",accessOk,"Activation required")}
+      {item("Product access",accessOk,"Activation required",planState.detail)}
       {item("Authorized website",scopeOk,"Verify ownership")}
     </div>
     {!verificationOk&&<button onClick={goSetup} className="secondary-action mt-5">{users.length?"View verification status":"Set up customer profile"} <Icon name="arrow-right" className="h-4 w-4"/></button>}
@@ -380,11 +490,13 @@ function Empty({title,text,small=false}){
 }
 
 function ProgressCard({job,target,active,stop}){
-  return <section className="card mt-6 p-5 sm:p-6">
-    <div className="flex items-start justify-between gap-4"><div><div className="flex items-center gap-2 text-sm font-extrabold text-emerald-700"><span className="h-2 w-2 rounded-full bg-emerald-500"></span>{["queued","running"].includes(job.status)?(job.status==="queued"?"Scan queued":"Scan in progress"):job.status==="completed"?"Scan completed":job.status==="stopped"?"Scan stopped":"Scan failed"}</div><div className="mt-1 break-all text-xs text-slate-400">{target}</div></div><div className="text-xs text-slate-400">Elapsed {fmtTime(job.elapsed_seconds)}</div></div>
-    <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-600 transition-all" style={{width:`${job.progress||0}%`}}></div></div>
-    <div className="mt-2 flex items-center justify-between text-xs"><span className="text-slate-400">{job.stage||"initializing"}</span><b>{job.progress||0}%</b></div>
-    <div className="mt-4 flex items-center justify-between gap-3"><details className="min-w-0 flex-1"><summary className="text-xs font-semibold text-slate-500">Technical scan log</summary><div className="mt-3 max-h-48 overflow-auto rounded-xl bg-slate-900 p-4 font-mono text-xs leading-5 text-slate-200">{(job.logs||[]).length===0?<div>Preparing scanner...</div>:job.logs.map((line,i)=><div key={i}>{line}</div>)}</div></details>{active&&<button type="button" onClick={stop} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600">Stop</button>}</div>
+  const running=["queued","running"].includes(job.status);
+  const title=running?customerStage(job.stage):job.status==="completed"?"Check complete":job.status==="stopped"?"Check stopped":"Check could not complete";
+  return <section className="scan-progress mt-6">
+    <div className="flex items-start justify-between gap-4"><div className="flex min-w-0 gap-3"><span className={`scan-state-dot ${running?"is-running":job.status==="completed"?"is-done":"is-error"}`}><Icon name={job.status==="completed"?"check":"shield"} className="h-5 w-5"/></span><div className="min-w-0"><div className="text-base font-extrabold text-slate-950">{title}</div><div className="mt-1 truncate text-xs text-slate-400">{target}</div></div></div><div className="shrink-0 text-xs font-semibold text-slate-400">{fmtTime(job.elapsed_seconds)}</div></div>
+    <div className="mt-6 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-slate-950 transition-all duration-500" style={{width:`${job.progress||0}%`}}></div></div>
+    <div className="mt-3 flex items-center justify-between gap-4 text-xs"><span className="text-slate-500">{running?"SkullHarbor is running the permitted checks locally on this device.":job.status==="completed"?"Results are ready to review.":job.status==="stopped"?"The check was stopped before completion.":"The check ended before results could be completed."}</span><b className="text-slate-700">{job.progress||0}%</b></div>
+    {active&&<div className="mt-5 flex justify-end"><button type="button" onClick={stop} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50">Stop check</button></div>}
   </section>;
 }
 

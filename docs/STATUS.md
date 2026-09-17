@@ -3,7 +3,7 @@
 **Project:** SkullHarbor UI-Scanner  
 **Current sprint:** Sprint 8 — Product UX  
 **Build:** v0.8.0-dev  
-**Status:** SPRINT 4 COMPLETE / SPRINT 4.1 COMPLETE / SPRINT 5 COMPLETE / SPRINT 6 STEP 1 COMPLETE / SPRINT 6 STEP 2 COMPLETE / SPRINT 6 STEP 3 COMPLETE / SPRINT 6 COMPLETE / SPRINT 7 STEP 1 COMPLETE
+**Status:** SPRINTS 1–7 COMPLETE / SPRINT 8 STEPS 1–2 CONFIRMED / SPRINT 8 STEP 3 IMPLEMENTED — TARGET-MACHINE CONFIRMATION PENDING
 
 ## Completed foundations
 
@@ -205,3 +205,19 @@ Sprint 8 — Product UX. Do not begin it as part of the Sprint-7 closeout.
 - MONTHLY retains controlled secondary web checks and bounded web-surface discovery; destructive/intrusive/fuzz/bruteforce classes remain excluded from automatic customer scans.
 - ANNUAL remains a managed pentest, not an unrestricted automated scanner tier.
 - Public/marketing presentation describes security coverage and customer benefit only; internal scanner brands, tuning codes and CLI details remain private implementation details.
+
+## Sprint 8 — Step 3 — Scan & Finding Experience
+
+- Replaced customer-facing technical scan logs/stage identifiers with simple SkullHarbor progress states.
+- Completed results now use outcome-oriented summaries and a clear zero-finding limitation statement.
+- Finding detail keeps normalized evidence and remediation guidance but removes raw-adapter wording/internal rule presentation from normal customer UX.
+- Removed the unimplemented false-positive placeholder control.
+- No authorization, entitlement, scan-profile or local-execution boundary changed.
+- Added `test_product_ux_step3.py`.
+- **Step 3 implementation complete; awaiting target-machine confirmation before Step 4.**
+
+## Sprint 8 Step 4 — Product UX Closeout / Tier Validation
+Implemented, pending product-owner target-machine confirmation. Development-only Trusted Test Authority can now switch a verified test customer between FREE trial and MONTHLY active access so both real self-service policies can be exercised end-to-end. Production trust boundaries remain unchanged.
+
+## 2026-09-16 — Sprint 8 Step 4 current
+Single-customer trial/upgrade lifecycle is now the active feature step. Customer/company identity is durable; FREE -> Advanced changes trusted entitlement only. Dashboard profile switching was removed from customer UX, Settings now separates Organization from Plan & billing, and Custom/yearly remains managed pentest. Commercial/legal checkout implementation is deferred to its dedicated later sprint.

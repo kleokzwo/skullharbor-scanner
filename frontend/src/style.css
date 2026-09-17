@@ -75,3 +75,12 @@ summary::-webkit-details-marker { display: none; }
   .primary-action { @apply inline-flex h-[58px] items-center justify-center gap-2 rounded-2xl bg-slate-950 px-8 text-[15px] font-extrabold text-white shadow-sm transition hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none; }
   .secondary-action { @apply inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800; }
 }
+
+/* Sprint 8 / Step 3: customer-first scan and finding experience */
+@layer components {
+  .scan-progress { @apply rounded-[24px] border border-slate-200 bg-white p-5 shadow-soft sm:p-6; }
+  .scan-state-dot { @apply grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-100 text-slate-500; }
+  .scan-state-dot.is-running { @apply bg-blue-50 text-blue-600; }
+  .scan-state-dot.is-done { @apply bg-emerald-50 text-emerald-600; }
+  .scan-state-dot.is-error { @apply bg-red-50 text-red-600; }
+}
