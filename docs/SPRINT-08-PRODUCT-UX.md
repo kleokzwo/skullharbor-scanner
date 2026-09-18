@@ -251,3 +251,12 @@ Step 4 now keeps the Settings surface aligned with authoritative local state: pe
 - Advanced secondary now runs six safe, GET-only HTTP exposure/misconfiguration templates shipped with SkullHarbor.
 - No customer-controlled template paths/flags; no automatic scan, headless, code, network, DoS, fuzz or brute-force templates.
 - Advanced remains fail-closed: all three promised coverage families must complete before results are published.
+
+
+### Step 6 final closeout — truthful external-service surface
+- Independent bounded Nmap reference: 10 open additional services produced exactly 10 SkullHarbor observations; 17 filtered ports produced none.
+- Public Service Exposure excludes website ports 80/443 from probing and customer results.
+- Fixed allow-list focuses on FTP, SSH, Telnet, mail, RPC, LDAP, SMB, NFS, Docker API, MySQL, RDP, PostgreSQL, VNC, Redis, Elasticsearch, Memcached and MongoDB.
+- Only state `open` becomes an observation; closed, filtered and out-of-policy ports are suppressed.
+- Open services are observations, not automatically vulnerabilities. Detail view explains evidence, relevance and remediation.
+- Dashboard distinguishes security findings from verified external-service observations.

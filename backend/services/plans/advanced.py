@@ -28,9 +28,10 @@ class AdvancedPolicy:
     # intentionally excluded because Core already covers the website itself.
     # No UDP, OS detection, version scan or NSE scripts.
     surface_ports: tuple[int, ...] = (
-        21, 22, 23, 25, 53, 110, 111, 135, 139, 143, 389, 445, 465, 587, 636,
-        993, 995, 1433, 1521, 2049, 2375, 2376, 3000, 3306, 3389, 5432, 5672,
-        5900, 6379, 8000, 8080, 8443, 8888, 9200, 9300, 11211, 27017,
+        21, 22, 23,
+        25, 110, 143, 465, 587, 993, 995,
+        111, 389, 445, 636, 2049,
+        2375, 2376, 3306, 3389, 5432, 5900, 6379, 9200, 11211, 27017,
     )
 
 POLICY = AdvancedPolicy()
