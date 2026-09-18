@@ -1,0 +1,17 @@
+id: skullharbor-public-api-docs
+info:
+  name: Public API documentation
+  author: SkullHarbor
+  severity: info
+  description: Interactive or machine-readable API documentation is publicly accessible.
+  tags: exposure
+http:
+  - method: GET
+    path: ["{{BaseURL}}/swagger-ui/index.html", "{{BaseURL}}/swagger-ui.html", "{{BaseURL}}/openapi.json"]
+    redirects: true
+    max-redirects: 2
+    matchers:
+      - type: word
+        part: body
+        words: ["Swagger UI", "\"openapi\""]
+        condition: or

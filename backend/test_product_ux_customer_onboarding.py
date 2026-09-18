@@ -1,7 +1,7 @@
 """Sprint 8: customer onboarding is actionable but never self-approves."""
 from pathlib import Path
-src=Path('../frontend/src/main.jsx').read_text(encoding='utf-8')
-api=Path('main.py').read_text(encoding='utf-8')
+src='\n'.join(p.read_text(encoding='utf-8') for p in Path('../frontend/src').rglob('*.jsx'))
+api=Path('application.py').read_text(encoding='utf-8')
 assert 'Set up customer profile' in src
 assert 'Verify your organization' in src
 assert 'Submit for verification' in src

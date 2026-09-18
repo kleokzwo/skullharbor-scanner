@@ -1,0 +1,16 @@
+id: skullharbor-exposed-phpinfo
+info:
+  name: Public PHP information page
+  author: SkullHarbor
+  severity: medium
+  description: A PHP information page is publicly accessible and may disclose configuration details.
+  tags: exposure
+http:
+  - method: GET
+    path: ["{{BaseURL}}/phpinfo.php", "{{BaseURL}}/info.php"]
+    redirects: false
+    matchers:
+      - type: word
+        part: body
+        words: ["PHP Version", "phpinfo()"]
+        condition: or

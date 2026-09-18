@@ -1,0 +1,19 @@
+id: skullharbor-common-backup-file
+info:
+  name: Common backup file exposed
+  author: SkullHarbor
+  severity: high
+  description: A common web configuration backup filename is publicly accessible.
+  tags: exposure
+http:
+  - method: GET
+    path: ["{{BaseURL}}/.htaccess.bak", "{{BaseURL}}/web.config.bak"]
+    redirects: false
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: word
+        part: body
+        words: ["RewriteRule", "<configuration", "connectionStrings"]
+        condition: or

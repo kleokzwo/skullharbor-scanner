@@ -52,7 +52,8 @@ with tempfile.TemporaryDirectory() as tmp:
             }
             return eng
 
-        # Partial success: one adapter fails, one succeeds -> completed + persisted finding.
+        # Fail-closed regression: when a policy promises every configured check,
+        # partial adapter success must never be published as a completed report.
         sid = new_scan()
         def fail(ctx, stop): raise RuntimeError("private adapter failure")
         def succeed(ctx, stop): return [finding()]
@@ -60,9 +61,10 @@ with tempfile.TemporaryDirectory() as tmp:
         eng._execute(EngineContext(sid, "https://example.test", "free", "example.test"))
         with TestSession() as db:
             row = db.get(Scan, sid)
-            assert row.status == "completed" and row.error is None
-            assert db.query(Finding).filter(Finding.scan_id == sid).count() == 1
-        assert eng.snapshot(sid)["status"] == "completed"
+            assert row.status == "failed"
+            assert "promised security coverage" in (row.error or "").lower()
+            assert db.query(Finding).filter(Finding.scan_id == sid).count() == 0
+        assert eng.snapshot(sid)["status"] == "failed"
 
         # All adapters fail -> failed, neutral public error, no findings.
         sid = new_scan()

@@ -1,0 +1,18 @@
+id: skullharbor-exposed-env
+info:
+  name: Exposed environment file
+  author: SkullHarbor
+  severity: high
+  description: A dotenv-style environment file appears publicly accessible.
+  tags: exposure
+http:
+  - method: GET
+    path: ["{{BaseURL}}/.env"]
+    redirects: false
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: regex
+        part: body
+        regex: ['(?m)^[A-Z][A-Z0-9_]{2,}\s*=.+$']

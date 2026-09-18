@@ -84,3 +84,13 @@ Only after `status` becomes `verified` will `/api/scan` accept that exact hostna
 - DoS scan categories are not exposed to self-service users
 
 See `docs/SPRINT-02-TARGET-VERIFICATION.md` for the E2E test plan.
+
+## Sprint 8 Step 6 architecture hardening
+
+Product coverage is now policy-owned under `backend/services/plans/`. FREE uses
+only the primary bounded web check. Advanced composes primary + controlled
+known-vulnerability/misconfiguration checks + bounded web-surface discovery.
+Customer-facing APIs remain vendor-neutral.
+
+Frontend page boundaries are under `frontend/src/pages/`; new page presentation
+must be implemented there rather than expanding the application controller.

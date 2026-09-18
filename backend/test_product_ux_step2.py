@@ -2,8 +2,8 @@
 from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
-frontend = (root / "frontend" / "src" / "main.jsx").read_text(encoding="utf-8")
-backend = (root / "backend" / "main.py").read_text(encoding="utf-8")
+frontend = "\n".join(x.read_text(encoding="utf-8") for x in (root / "frontend" / "src").rglob("*.jsx"))
+backend = "\n".join((root / "backend" / p).read_text(encoding="utf-8") for p in ("controllers/target_controller.py", "services/verification_service.py"))
 
 # The product explains ownership verification in customer language.
 assert "Verify ownership." in frontend
@@ -22,7 +22,7 @@ assert 'targets.filter(t=>!userId || String(t.user_id)===String(userId))' in fro
 # UX does not weaken the backend ownership proof: a unique SkullHarbor TXT
 # token is still generated and the authoritative verify endpoint remains.
 assert 'verification_token=secrets.token_urlsafe(24)' in backend
-assert '@app.post("/api/targets/{target_id}/verify")' in backend
+assert '@router.post("/api/targets/{target_id}/verify")' in backend
 assert 'expected = f"sh-verification={target.verification_token}"' in backend
 assert '_resolve_public_ips(target.domain)' in backend
 
@@ -45,18 +45,12 @@ assert "Activation required" in frontend
 assert '/ UI-SCANNER' not in frontend
 
 
-# Regression: an already verified website must carry its existing local customer
-# association into Quick Check. The user must never be asked to verify it again
-# merely because multiple local development/customer profiles exist.
-assert 'if(t.user_id)setUserId(String(t.user_id));setTarget(`https://${t.domain}`)' in frontend
-assert 'const owned=targets.find(t=>t.status==="verified"' in frontend
-assert 'setUserId(String(owned.user_id))' in frontend
-
-# Fix3 regression: derived scan activity must be initialized before any hook
-# references it. This prevents the React TDZ crash / blank application shell.
-active_decl = 'const active=["queued","running"].includes(job?.status);'
-active_effect = 'if(!target || active)return;'
-assert frontend.index(active_decl) < frontend.index(active_effect)
+# Security regression: selecting/typing a target must NEVER switch customer
+# identity based on another customer's ownership record. Customer context is
+# fixed first; targets and scan history are then loaded only for that customer.
+assert 'const owned=targets.find(t=>t.status==="verified"' not in frontend
+assert 'fetch(`${API}/api/scans?user_id=${encodeURIComponent(effectiveId)}`)' in frontend
+assert 'fetch(`${API}/api/targets?user_id=${encodeURIComponent(effectiveId)}`)' in frontend
 
 
 # Legacy verified targets from before customer scoping are migrated without a

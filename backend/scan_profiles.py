@@ -4,6 +4,7 @@ Customer requests never contain scanner names, raw CLI flags, tuning categories,
 adapter selections. Billing/entitlement resolution will be connected in Sprint 6.
 """
 from dataclasses import dataclass
+from services.plans import FREE_POLICY, ADVANCED_POLICY
 
 
 @dataclass(frozen=True)
@@ -13,6 +14,7 @@ class ScanProfile:
     self_service: bool
     adapter_slots: tuple[str, ...]
     primary_tuning: str | None
+    require_all_adapters: bool = True
 
 
 _PROFILES = {
@@ -20,16 +22,18 @@ _PROFILES = {
         key="free",
         public_name="SkullHarbor Quick Check",
         self_service=True,
-        adapter_slots=("primary",),
-        primary_tuning="12",
+        adapter_slots=FREE_POLICY.adapter_slots,
+        primary_tuning=FREE_POLICY.primary_tuning,
+        require_all_adapters=FREE_POLICY.require_all_adapters,
     ),
     "monthly": ScanProfile(
         key="monthly",
         public_name="SkullHarbor Advanced Check",
         self_service=True,
-        adapter_slots=("primary", "secondary", "surface"),
-        # Controlled paid expansion: includes SQL-injection checks (9); DoS category 6 is excluded.
-        primary_tuning="12349b",
+        adapter_slots=ADVANCED_POLICY.adapter_slots,
+        # Controlled paid expansion; disruptive category 6 remains excluded.
+        primary_tuning=ADVANCED_POLICY.primary_tuning,
+        require_all_adapters=ADVANCED_POLICY.require_all_adapters,
     ),
     "annual": ScanProfile(
         key="annual",
@@ -37,6 +41,7 @@ _PROFILES = {
         self_service=False,
         adapter_slots=(),
         primary_tuning=None,
+        require_all_adapters=True,
     ),
 }
 

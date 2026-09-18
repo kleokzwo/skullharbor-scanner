@@ -72,11 +72,11 @@ try:
             cols = {c.name.lower() for c in model.__table__.columns}
             assert not (cols & forbidden), (model.__name__, cols & forbidden)
 
-    source = Path(main.__file__).read_text(encoding="utf-8").lower()
+    source = (Path(main.__file__).parent / "controllers" / "customer_controller.py").read_text(encoding="utf-8").lower()
     # Public surface is read-only for engagements; trusted decisions remain internal.
-    assert '@app.get("/api/users/{user_id}/engagements")' in source
+    assert '@router.get("/api/users/{user_id}/engagements")' in source
     for method in ("post", "put", "patch", "delete"):
-        assert f'@app.{method}("/api/users/{{user_id}}/engagements' not in source
+        assert f'@router.{method}("/api/users/{{user_id}}/engagements' not in source
 
     print("engagement authorization step 1 tests: OK")
 finally:

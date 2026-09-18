@@ -4,6 +4,7 @@ Customer-facing code talks to ScanEngine only. Concrete scanner/tool adapters re
 backend implementation details and can be replaced without changing the API.
 """
 from dataclasses import dataclass
+import json
 from datetime import datetime
 import threading
 import time
@@ -41,6 +42,12 @@ class ScanEngine:
             "secondary": self._run_secondary_web_security,
             "surface": self._run_surface_discovery,
         }
+        # Customer-safe coverage names. Concrete tool identities never cross the API.
+        self._coverage_names = {
+            "primary": "Core web security",
+            "secondary": "Vulnerability & exposure checks",
+            "surface": "Public service exposure",
+        }
 
     def enqueue(self, scan_id: int, target: str, profile: str, expected_hostname: str, initial_ips: list[str]):
         now = time.time()
@@ -76,6 +83,7 @@ class ScanEngine:
                 "logs": list(job["logs"][-200:]),
                 "elapsed_seconds": int(time.time() - job["started_at"]),
                 "error": job.get("error"),
+                "coverage": self._public_coverage(job),
             }
 
     def stop(self, scan_id: int) -> bool:
@@ -131,31 +139,43 @@ class ScanEngine:
             self._append(ctx.scan_id, "Initializing SkullHarbor Quick Check")
 
             policy = require_self_service_profile(ctx.profile)
-            adapters = self._adapters or tuple(self._adapter_slots[name] for name in policy.adapter_slots)
+            if self._adapters:
+                adapter_specs = tuple((f"check-{i}", adapter) for i, adapter in enumerate(self._adapters, start=1))
+            else:
+                adapter_specs = tuple((name, self._adapter_slots[name]) for name in policy.adapter_slots)
+            self._set(ctx.scan_id, coverage_expected=len(adapter_specs))
             all_findings = []
             successful_adapters = 0
-            for index, adapter in enumerate(adapters, start=1):
+            for index, (slot, adapter) in enumerate(adapter_specs, start=1):
                 if stop_event.is_set():
                     raise RuntimeError("Scan stopped by user")
 
                 started = time.time()
                 try:
                     findings = adapter(ctx, stop_event)
+                    # Persist a customer-safe coverage family on every finding so
+                    # Advanced results can be reviewed by coverage area instead of
+                    # as one undifferentiated list. Concrete adapter identities stay private.
+                    coverage_family = self._coverage_names.get(slot, "Security check")
+                    for finding in findings:
+                        finding.setdefault("coverage_family", coverage_family)
                     successful_adapters += 1
                     all_findings.extend(findings)
-                    self._record_adapter_run(ctx.scan_id, index, "completed", started, len(findings))
+                    self._record_adapter_run(ctx.scan_id, index, "completed", started, len(findings), slot=slot)
                 except Exception as exc:
                     if stop_event.is_set() or str(exc) == "Scan stopped by user":
-                        self._record_adapter_run(ctx.scan_id, index, "stopped", started, 0)
+                        self._record_adapter_run(ctx.scan_id, index, "stopped", started, 0, slot=slot)
                         raise
                     # One adapter must not discard useful results from another.
                     # Concrete adapter identity/error text remains private.
                     outcome = "timeout" if isinstance(exc, AdapterTimeoutError) else "failed"
-                    self._record_adapter_run(ctx.scan_id, index, outcome, started, 0, str(exc))
+                    self._record_adapter_run(ctx.scan_id, index, outcome, started, 0, str(exc), slot=slot)
                     self._append(ctx.scan_id, "One web security check could not complete; continuing with remaining checks")
 
             if successful_adapters == 0:
                 raise RuntimeError("Web security checks could not be completed")
+            if policy.require_all_adapters and successful_adapters != len(adapter_specs):
+                raise RuntimeError("The promised security coverage could not be completed. No partial Advanced result was published.")
 
             if stop_event.is_set():
                 raise RuntimeError("Scan stopped by user")
@@ -175,6 +195,7 @@ class ScanEngine:
                 raise RuntimeError("Scan stopped by user")
             record.status = "completed"
             record.error = None
+            record.coverage_summary = json.dumps(self._public_coverage(self._jobs.get(ctx.scan_id, {})), separators=(",", ":"))
             db.commit()
             self._set(ctx.scan_id, status="completed", stage="completed", progress=100, error=None)
             self._append(ctx.scan_id, f"Completed with {len(all_findings)} normalized findings")
@@ -184,6 +205,13 @@ class ScanEngine:
             if record:
                 record.status = "stopped" if stopped else "failed"
                 record.error = None if stopped else str(exc)[:4000]
+                # Persist vendor-neutral coverage telemetry on failure too. This
+                # lets support and the UI identify the failed coverage family
+                # without publishing partial security findings as a result.
+                record.coverage_summary = json.dumps(
+                    self._public_coverage(self._jobs.get(ctx.scan_id, {})),
+                    separators=(",", ":"),
+                )
                 db.commit()
             if stopped:
                 self._set(ctx.scan_id, status="stopped", stage="stopped", error=None)
@@ -195,7 +223,7 @@ class ScanEngine:
         finally:
             db.close()
 
-    def _record_adapter_run(self, scan_id: int, position: int, status: str, started: float, finding_count: int, error: str | None = None):
+    def _record_adapter_run(self, scan_id: int, position: int, status: str, started: float, finding_count: int, error: str | None = None, slot: str | None = None):
         """Store private per-adapter execution telemetry without exposing vendor identity."""
         with self._lock:
             job = self._jobs.get(scan_id)
@@ -203,11 +231,26 @@ class ScanEngine:
                 return
             job.setdefault("adapter_runs", []).append({
                 "position": position,
+                "slot": slot,
                 "status": status,
                 "duration_ms": max(0, int((time.time() - started) * 1000)),
                 "finding_count": finding_count,
                 "error": (error or "")[:1000] or None,
             })
+
+    def _public_coverage(self, job: dict) -> dict:
+        runs = list(job.get("adapter_runs") or [])
+        items = []
+        for run in runs:
+            slot = run.get("slot") or "check"
+            items.append({
+                "name": self._coverage_names.get(slot, "Security check"),
+                "status": run.get("status") or "pending",
+                "finding_count": int(run.get("finding_count") or 0),
+            })
+        expected = int(job.get("coverage_expected") or len(items) or 0)
+        completed = sum(1 for item in items if item["status"] == "completed")
+        return {"expected": expected, "completed": completed, "complete": bool(expected and completed == expected), "checks": items}
 
     @staticmethod
     def _deduplicate_findings(findings: list[dict]) -> list[dict]:

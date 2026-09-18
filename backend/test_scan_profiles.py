@@ -41,10 +41,11 @@ for private_term in ("nikto", "nuclei", "nmap", "tuning", "adapter", "12349b"):
     assert private_term not in serialized
 
 # Customer scan API cannot ask for a stronger profile or raw scanner controls.
-main_source = (Path(__file__).parent / "main.py").read_text()
-request_block = main_source[main_source.index("class ScanRequest"):main_source.index("class UserRequest")]
+schema_source = (Path(__file__).parent / "schemas" / "api.py").read_text()
+controller_source = (Path(__file__).parent / "controllers" / "scan_controller.py").read_text()
+request_block = schema_source[schema_source.index("class ScanRequest"):schema_source.index("class UserRequest")]
 for forbidden in ("profile", "tier", "scanner", "tuning", "arguments", "flags"):
     assert forbidden not in request_block.lower()
-assert 'require_self_service_profile("free")' in main_source
+assert 'require_self_service_profile(entitlement["scan_profile"])' in controller_source
 
 print("scan profile policy tests: OK")

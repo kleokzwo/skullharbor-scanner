@@ -38,17 +38,18 @@ try:
             assert exc.status_code == 403
 
     # The customer request surface must not contain an approval/status setter.
-    source = Path(main.__file__).read_text(encoding="utf-8").lower()
-    scan_req = source.split("class scanrequest", 1)[1].split("class userrequest", 1)[0]
+    schema_source = (Path(main.__file__).parent / "schemas" / "api.py").read_text(encoding="utf-8").lower()
+    scan_req = schema_source.split("class scanrequest", 1)[1].split("class userrequest", 1)[0]
+    source = (Path(main.__file__).parent / "controllers" / "customer_controller.py").read_text(encoding="utf-8").lower()
     for forbidden in ("verification_status", "approved", "suspended", "rejected"):
         assert forbidden not in scan_req
 
     # Step 1 intentionally has no public approval mutation endpoint.
-    assert '@app.post("/api/users/{user_id}/approve")' not in source
-    assert '@app.patch("/api/users/{user_id}")' not in source
+    assert '@router.post("/api/users/{user_id}/approve")' not in source
+    assert '@router.patch("/api/users/{user_id}")' not in source
 
     # New accounts are explicitly pending.
-    create_user_src = source.split("def create_user", 1)[1].split("@app.get(\"/api/targets\")", 1)[0]
+    create_user_src = source.split("def create_user", 1)[1].split('@router.get("/api/users/{user_id}/product-status")', 1)[0]
     assert 'verification_status="pending"' in create_user_src
 
     print("customer verification gate tests: OK")

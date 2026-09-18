@@ -55,8 +55,8 @@ try:
         forbidden = {"scan_id", "target", "finding", "raw_output", "scanner", "verification_token"}
         assert not ({c.name.lower() for c in EngagementAudit.__table__.columns} & forbidden)
 
-    source = Path(main.__file__).read_text(encoding="utf-8")
-    scan_block = source[source.index('@app.post("/api/scan")'):]
+    source = (Path(main.__file__).parent / "controllers" / "scan_controller.py").read_text(encoding="utf-8")
+    scan_block = source[source.index('@router.post("/api/scan")'):]
     assert "verified_target, engagement = _scan_authorization" in scan_block
     assert "_authorized_target_for_scan(db, hostname, req.user_id)" not in scan_block
 
