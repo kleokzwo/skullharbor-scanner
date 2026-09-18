@@ -260,3 +260,12 @@ Step 4 now keeps the Settings surface aligned with authoritative local state: pe
 - Only state `open` becomes an observation; closed, filtered and out-of-policy ports are suppressed.
 - Open services are observations, not automatically vulnerabilities. Detail view explains evidence, relevance and remediation.
 - Dashboard distinguishes security findings from verified external-service observations.
+
+## Final UI closeout — unified Advanced results report
+- Removed Recent scans from the completed-scan result surface to give the security result full width.
+- Advanced result is one unified report body with a 01/02/03 visual flow: Core Web Security, Vulnerability & Exposure Checks, Public Service Exposure.
+- Added compact 3/3 / Findings / High-Critical / Observations summary.
+- Public Service Exposure renders service + TCP port/protocol as first-class columns; 80/443 remain excluded by policy.
+- Zero-result coverage remains visible as a positive completed-check state rather than disappearing.
+- Frontend icon system migrated from hand-authored SVGs to lucide-react.
+- Scanner, authorization, entitlement, coverage and normalization logic are unchanged by this visual closeout.

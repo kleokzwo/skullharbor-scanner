@@ -1,29 +1,23 @@
 import React from "react";
+import {
+  Home, FileText, Shield, Settings, Info, Link2, Play, Check, Copy, Globe2, Clock3,
+  Search, Wrench, Code2, Trash2, ChevronRight, ChevronLeft, ArrowRight, ArrowLeft,
+  CircleCheck, Network, Lightbulb, Plus, FileCheck2
+} from "lucide-react";
 
 // Security contract: Your access and scope are checked again by SkullHarbor when the scan starts.
 export const LEVELS = ["critical", "high", "medium", "low", "info"];
 
 export function Icon({name, className="h-5 w-5"}) {
-  const common={className,fill:"none",stroke:"currentColor",strokeWidth:"1.8",viewBox:"0 0 24 24","aria-hidden":"true"};
-  if(name==="home") return <svg {...common}><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h13v-9.5M9.5 20v-6h5v6"/></svg>;
-  if(name==="doc") return <svg {...common}><path d="M6 3.5h8l4 4V20H6z"/><path d="M14 3.5V8h4M9 12h6M9 15.5h6"/></svg>;
-  if(name==="shield") return <svg {...common}><path d="M12 3 4.5 6v5.5c0 4.8 3 7.8 7.5 9.5 4.5-1.7 7.5-4.7 7.5-9.5V6z"/></svg>;
-  if(name==="gear") return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19 13.5v-3l-2-.6a7 7 0 0 0-.8-1.9l1-1.8-2.1-2.1-1.8 1a7 7 0 0 0-1.9-.8L10.8 2h-3l-.6 2.1a7 7 0 0 0-1.9.8l-1.8-1-2.1 2.1 1 1.8a7 7 0 0 0-.8 1.9L0 10.5v3l2 .6c.2.7.5 1.3.8 1.9l-1 1.8 2.1 2.1 1.8-1c.6.4 1.2.6 1.9.8l.6 2.1h3l.6-2.1c.7-.2 1.3-.5 1.9-.8l1.8 1 2.1-2.1-1-1.8c.4-.6.6-1.2.8-1.9z" transform="translate(2 -0.1) scale(.83)"/></svg>;
-  if(name==="info") return <svg {...common}><circle cx="12" cy="12" r="9"/><path d="M12 10.5v6M12 7.5h.01"/></svg>;
-  if(name==="link") return <svg {...common}><path d="M9.5 14.5 14.5 9"/><path d="M7.2 16.8 5.8 18.2a3.5 3.5 0 0 1-5-5L5 9a3.5 3.5 0 0 1 5 0" transform="translate(2)"/><path d="m16.8 7.2 1.4-1.4a3.5 3.5 0 0 1 5 5L19 15a3.5 3.5 0 0 1-5 0" transform="translate(-2)"/></svg>;
-  if(name==="play") return <svg {...common} fill="currentColor" stroke="none"><path d="m8 5 11 7-11 7z"/></svg>;
-  if(name==="check") return <svg {...common}><path d="m5 12.5 4.2 4L19 7"/></svg>;
-  if(name==="copy") return <svg {...common}><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>;
-  if(name==="globe") return <svg {...common}><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 3.8 5.5 3.8 9S14.5 18.5 12 21c-2.5-2.5-3.8-5.5-3.8-9S9.5 5.5 12 3z"/></svg>;
-  if(name==="clock") return <svg {...common}><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>;
-  if(name==="search") return <svg {...common}><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg>;
-  if(name==="wrench") return <svg {...common}><path d="M14.5 6.5a4.5 4.5 0 0 0-6 5.8L3.5 17.3l3.2 3.2 5-5a4.5 4.5 0 0 0 5.8-6l-3 3-3-3z"/></svg>;
-  if(name==="code") return <svg {...common}><path d="m9 6-6 6 6 6M15 6l6 6-6 6M13 4l-2 16"/></svg>;
-  if(name==="trash") return <svg {...common}><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 10v7M14 10v7"/></svg>;
-  if(name==="chevron") return <svg {...common}><path d="m9 6 6 6-6 6"/></svg>;
-  if(name==="arrow-left") return <svg {...common}><path d="M19 12H5m6-6-6 6 6 6"/></svg>;
-  if(name==="arrow-right") return <svg {...common}><path d="M5 12h14m-6-6 6 6-6 6"/></svg>;
-  return null;
+  const icons = {
+    home: Home, doc: FileText, shield: Shield, gear: Settings, info: Info, link: Link2,
+    play: Play, check: Check, copy: Copy, globe: Globe2, clock: Clock3, search: Search,
+    wrench: Wrench, code: Code2, trash: Trash2, chevron: ChevronRight,
+    "arrow-left": ArrowLeft, "arrow-right": ArrowRight, "circle-check": CircleCheck,
+    network: Network, lightbulb: Lightbulb, plus: Plus, report: FileCheck2
+  };
+  const Component = icons[name];
+  return Component ? <Component className={className} aria-hidden="true" strokeWidth={1.9}/> : null;
 }
 
 function fmtTime(total=0){
@@ -149,7 +143,7 @@ export function Empty({title,text,small=false}){
 
 export function ProgressCard({job,target,active,stop}){
   const running=["queued","running"].includes(job.status);
-  const title=running?customerStage(job.stage):job.status==="completed"?"Check complete":job.status==="stopped"?"Check stopped":"Check could not complete";
+  const title=running?customerStage(job.stage):job.status==="completed"?"Scan complete":job.status==="stopped"?"Check stopped":"Check could not complete";
   return <section className="scan-progress mt-6">
     <div className="flex items-start justify-between gap-4"><div className="flex min-w-0 gap-3"><span className={`scan-state-dot ${running?"is-running":job.status==="completed"?"is-done":"is-error"}`}><Icon name={job.status==="completed"?"check":"shield"} className="h-5 w-5"/></span><div className="min-w-0"><div className="text-base font-extrabold text-slate-950">{title}</div><div className="mt-1 truncate text-xs text-slate-400">{target}</div></div></div><div className="shrink-0 text-xs font-semibold text-slate-400">{fmtTime(job.elapsed_seconds)}</div></div>
     <div className="mt-6 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-slate-950 transition-all duration-500" style={{width:`${job.progress||0}%`}}></div></div>

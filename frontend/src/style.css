@@ -53,14 +53,14 @@ summary::-webkit-details-marker { display: none; }
   .sidebar-foot { @apply fixed bottom-8 ml-6 text-[10px] font-bold uppercase leading-5 tracking-[.16em] text-slate-300; }
   .workspace { background: radial-gradient(circle at 32% 0%, rgba(255,255,255,.95), transparent 35%), #f6f8fb; }
   .hero-row { @apply mt-2 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between; }
-  .product-title { @apply text-[42px] font-black leading-none tracking-[-.055em] text-slate-950 sm:text-[54px]; }
+  .product-title { @apply text-[42px] font-medium leading-none tracking-[-.055em] text-slate-950 sm:text-[54px];}
   .product-subtitle { @apply mt-3 text-[15px] leading-6 text-slate-500 sm:text-[17px]; }
   .local-chip { @apply inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-600 shadow-sm; }
   .local-chip span { @apply h-2 w-2 rounded-full bg-emerald-500; box-shadow: 0 0 0 4px rgba(16,185,129,.10); }
   .readiness-panel { @apply overflow-hidden rounded-[24px] border border-slate-200 bg-white p-5 shadow-soft sm:p-6; }
   .readiness-panel.is-complete { @apply border-emerald-200; }
   .readiness-head { @apply flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between; }
-  .readiness-head h2 { @apply mt-1 text-[22px] font-black tracking-[-.025em] text-slate-950; }
+  .readiness-head h2 { @apply mt-1 text-[22px] font-medium leading-none tracking-[-.025em] text-slate-950;}
   .readiness-head p:not(.eyebrow) { @apply mt-1.5 text-sm text-slate-500; }
   .profile-select { @apply h-11 min-w-[180px] rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 outline-none focus:border-slate-400; }
   .readiness-flow { @apply mt-6 grid grid-cols-1 gap-3 sm:grid-cols-[auto_1fr_auto_1fr_auto] sm:items-start sm:gap-0; }
@@ -85,4 +85,60 @@ summary::-webkit-details-marker { display: none; }
   .scan-state-dot.is-running { @apply bg-blue-50 text-blue-600; }
   .scan-state-dot.is-done { @apply bg-emerald-50 text-emerald-600; }
   .scan-state-dot.is-error { @apply bg-red-50 text-red-600; }
+}
+
+/* Sprint 8 final visual closeout: unified Advanced Scan report */
+@layer components {
+  .results-report { @apply rounded-[22px] border border-slate-200 bg-white p-4 shadow-soft sm:p-5; }
+  .report-title-row { @apply flex flex-col gap-5 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5 sm:p-6 lg:flex-row lg:items-center lg:justify-between; }
+  .report-complete-icon { @apply grid h-14 w-14 shrink-0 place-items-center rounded-full bg-emerald-500 text-white shadow-sm; }
+  .report-summary { @apply grid gap-5 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5 lg:grid-cols-[1fr_auto] lg:items-center; }
+  .summary-shield { @apply grid h-12 w-12 shrink-0 place-items-center rounded-full bg-emerald-500 text-white; }
+  .report-summary h3 { @apply text-lg font-black tracking-[-.02em] text-emerald-950; }
+  .report-summary p { @apply mt-1 text-sm text-emerald-800/70; }
+  .summary-metrics { @apply grid grid-cols-2 divide-x divide-emerald-200 sm:grid-cols-4; }
+  .report-title-metrics { @apply grid shrink-0 grid-cols-3 divide-x divide-emerald-200; }
+  .report-title-metrics div { @apply flex min-w-[105px] flex-col items-center justify-center px-4 text-center; }
+  .report-title-metrics b { @apply text-2xl font-black text-emerald-950; }
+  .report-title-metrics span { @apply mt-1 text-[11px] font-medium leading-4 text-slate-500; }
+  .summary-metrics div { @apply flex min-w-[105px] flex-col items-center justify-center px-4 text-center; }
+  .summary-metrics b { @apply text-2xl font-black text-emerald-950; }
+  .summary-metrics span { @apply mt-1 text-[11px] font-medium leading-4 text-slate-500; }
+  .result-timeline { @apply relative mt-4 space-y-4 pl-9; }
+  .result-timeline:before {   content: "";
+  position: absolute;
+  bottom: 2rem;
+  left: 8px;
+  top: 1.75rem;
+
+  width: 0;
+  border-left: 3px dotted rgb(163, 162, 163);}
+  .result-section { @apply relative overflow-visible rounded-2xl border border-slate-200 bg-white; }
+  .timeline-number { @apply absolute -left-[47px] top-4 z-10 grid h-9 w-9 place-items-center rounded-full text-xs font-black text-white shadow-sm; }
+  .result-section-1 .timeline-number, .result-section-1 .section-icon { @apply bg-emerald-500; }
+  .result-section-2 .timeline-number, .result-section-2 .section-icon { @apply bg-blue-500; }
+  .result-section-3 .timeline-number, .result-section-3 .section-icon { @apply bg-violet-500; }
+  .result-section-head { @apply flex items-center gap-3 rounded-t-2xl bg-slate-50/80 px-4 py-4 sm:px-5; }
+  .result-section-1 .result-section-head { @apply bg-emerald-50/50; }
+  .result-section-2 .result-section-head { @apply bg-blue-50/50; }
+  .result-section-3 .result-section-head { @apply bg-violet-50/60; }
+  .section-icon { @apply grid h-10 w-10 shrink-0 place-items-center rounded-full text-white; }
+  .result-section-head h3 { @apply text-base font-black text-slate-950 sm:text-lg; }
+  .result-section-head p { @apply mt-0.5 text-xs text-slate-500; }
+  .section-count { @apply shrink-0 text-sm font-black text-emerald-700 sm:text-base; }
+  .result-section-3 .section-count { @apply text-violet-700; }
+  .result-table { @apply overflow-x-auto; }
+  .result-table-head, .result-table-row { @apply min-w-[820px] items-center gap-3 px-4 sm:px-5; }
+  .result-table-head { @apply grid border-b border-slate-200 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-400; }
+  .result-table-row { @apply grid border-b border-slate-100 py-2.5 text-xs last:border-b-0; }
+  .finding-grid { grid-template-columns: 32px 86px minmax(180px,1.1fr) minmax(260px,1.7fr) 74px; }
+  .surface-grid { grid-template-columns: 32px 86px 130px 120px minmax(260px,1fr) 74px; }
+  .view-action { @apply inline-flex items-center justify-center gap-1 rounded-lg border border-emerald-400 bg-white px-3 py-1.5 text-xs font-extrabold text-emerald-600 transition hover:bg-emerald-50; }
+  .no-exposures { @apply flex min-h-[150px] flex-col items-center justify-center px-5 py-8 text-center; }
+  .no-exposures > span { @apply grid h-12 w-12 place-items-center rounded-full bg-emerald-100 text-emerald-600; }
+  .no-exposures b { @apply mt-3 text-base font-black text-slate-900; }
+  .no-exposures p { @apply mt-1 max-w-md text-xs leading-5 text-slate-500; }
+  .good-to-know { @apply m-3 flex gap-3 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-blue-600; }
+  .good-to-know b { @apply block text-xs font-extrabold text-slate-800; }
+  .good-to-know p { @apply mt-0.5 text-[11px] leading-4 text-slate-500; }
 }

@@ -11,13 +11,22 @@ export default function DashboardPage(props) {
     "Vulnerability & exposure checks": "Targeted checks for exposed files, interfaces and common web risks.",
     "Public service exposure": "Additional internet-facing services only; normal website ports 80/443 are excluded.",
   };
+  const isAdvanced = selected?.scan_profile === "monthly";
+  const coverageCount = name => findings.filter(f => (f.coverage_family || "Core web security") === name).length;
+  const highCritical = (counts.high || 0) + (counts.critical || 0);
+  const servicePort = finding => {
+    const text = `${finding.title || ""} ${finding.description || ""}`;
+    const match = text.match(/(?:TCP\s*\/?\s*|port\s*)(\d{1,5})/i);
+    return match ? `TCP / ${match[1]}` : "—";
+  };
+  const serviceName = finding => (finding.title || "Service").replace(/\s+publicly reachable.*$/i, "").trim();
   return <div className="min-h-screen bg-slate-50">
     <Header productStatus={productStatus}/>
     <MobileNav page={page} setPage={setPage}/>
     <div className="flex min-h-[calc(100vh-70px)]">
       <Sidebar page={page} setPage={setPage}/>
       <main className="workspace min-w-0 flex-1 px-4 py-7 sm:px-7 lg:px-10 lg:py-10">
-        <div className="mx-auto max-w-[1180px]">
+        <div className="mx-auto max-w-[1280px]">
           <section>
             <p className="eyebrow">SECURITY WORKSPACE</p>
             <div className="hero-row"><div><h1 className="product-title">Quick Check</h1>
@@ -44,36 +53,36 @@ export default function DashboardPage(props) {
             <div className="mt-4 grid gap-2 sm:grid-cols-3">{(selected.coverage.checks||[]).map((check,index)=><div key={`${check.name}-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"><div className="flex items-center gap-2"><span className={`grid h-6 w-6 place-items-center rounded-full ${check.status==="completed"?"bg-emerald-50 text-emerald-600":"bg-amber-50 text-amber-600"}`}><Icon name={check.status==="completed"?"check":"shield"} className="h-4 w-4"/></span><b className="text-xs text-slate-800">{check.name}</b></div><div className="mt-2 text-[11px] font-semibold text-slate-500">{check.status==="completed"?"Completed":check.status==="timeout"?"Timed out":"Could not complete"}</div></div>)}</div>
           </section>}
 
-          {selected&&selected.status==="completed"&&<section className="card mt-5 p-5 sm:p-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex gap-3">
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-emerald-600 text-white"><Icon name="check" className="h-6 w-6"/></span>
-                <div><h2 className="text-xl font-extrabold">{selected.status==="completed"?resultHeadline(findings):"Check result"}</h2><p className="mt-1 break-all text-sm text-slate-500">{selected.target}</p></div>
+          {selected&&selected.status==="completed"&&<section className="results-report mt-6">
+            <div className="report-title-row">
+              <div className="flex min-w-0 items-start gap-4">
+                <span className="report-complete-icon"><Icon name={isAdvanced?"shield":"check"} className="h-8 w-8"/></span>
+                <div className="min-w-0"><h2 className="text-3xl font-black tracking-[-.035em] text-slate-950">{isAdvanced?"Advanced Security Check Complete":"Scan complete"}</h2><b className="mt-1 block break-all text-sm text-slate-800">{selected.target}</b><p className="mt-1 text-xs text-slate-500">{selected.created_at?`Completed on ${new Date(selected.created_at).toLocaleString()}`:"Completed"}{isAdvanced?" · All 3 scan categories completed successfully.":""}</p></div>
               </div>
-              <div className="text-left text-xs text-slate-400 sm:text-right"><div>{selected.created_at?new Date(selected.created_at).toLocaleString():""}</div><div className="mt-1">{selected.scan_profile==="monthly"?"Advanced Security Check":"Quick Check"}</div></div>
+              {isAdvanced&&<div className="report-title-metrics">
+                <div><b>{findings.filter(f=>(f.coverage_family||"Core web security")!=="Public service exposure").length}</b><span>Findings</span></div>
+                <div><b className={highCritical?"text-red-600":""}>{highCritical}</b><span>High / Critical</span></div>
+                <div><b>{coverageCount("Public service exposure")}</b><span>Observations</span></div>
+              </div>}
             </div>
-            <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-5">
-              {LEVELS.map(level=><div key={level} className={`severity-tile ${severityClass(level)}`}><div className="text-2xl font-black">{counts[level]}</div><div className="mt-1 text-xs font-bold capitalize">{level}</div></div>)}
-            </div>
-            {selected.scan_profile==="monthly"&&selected.coverage&&<div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><div className="text-sm font-extrabold text-slate-900">Advanced coverage</div><div className="mt-1 text-xs text-slate-500">SkullHarbor completed the paid coverage families promised for this check.</div></div><span className={`pill ${selected.coverage.complete?"bg-emerald-50 text-emerald-700":"bg-amber-50 text-amber-700"}`}>{selected.coverage.completed}/{selected.coverage.expected} completed</span></div>
-              <div className="mt-4 grid gap-2 sm:grid-cols-3">{(selected.coverage.checks||[]).map((check,index)=><div key={`${check.name}-${index}`} className="rounded-xl border border-slate-200 bg-white px-4 py-3"><div className="flex items-center gap-2"><span className={`grid h-6 w-6 place-items-center rounded-full ${check.status==="completed"?"bg-emerald-50 text-emerald-600":"bg-amber-50 text-amber-600"}`}><Icon name={check.status==="completed"?"check":"shield"} className="h-4 w-4"/></span><b className="text-xs text-slate-800">{check.name}</b></div><div className="mt-2 text-[11px] leading-5 text-slate-400"><span className="font-semibold text-slate-500">{check.finding_count} {resultNoun(check.name)}{check.finding_count===1?"":"s"}</span><span className="block">{coverageHelp[check.name] || "Completed security coverage."}</span></div></div>)}</div>
-            </div>}
+
+            {isAdvanced ? <div className="result-timeline">
+              {coverageOrder.map((name,index)=>{
+                const items=findings.filter(f=>(f.coverage_family||"Core web security")===name);
+                const surface=name==="Public service exposure";
+                const vuln=name==="Vulnerability & exposure checks";
+                const icon=surface?"network":vuln?"shield":"globe";
+                return <section key={name} className={`result-section result-section-${index+1}`}>
+                  <span className="timeline-number">{String(index+1).padStart(2,"0")}</span>
+                  <div className="result-section-head"><span className="section-icon"><Icon name={icon} className="h-6 w-6"/></span><div className="min-w-0 flex-1"><h3>{name}</h3><p>{coverageHelp[name]}</p></div><b className="section-count">{items.length} {surface?"Observation":"Finding"}{items.length===1?"":"s"}</b></div>
+                  {items.length===0 ? <div className="no-exposures"><span><Icon name="check" className="h-7 w-7"/></span><b>No exposures detected</b><p>Targeted security checks completed. No vulnerabilities or exposures were found.</p></div> : surface ? <div className="result-table"><div className="result-table-head surface-grid"><span>#</span><span>Severity</span><span>Service</span><span>Port / Protocol</span><span>Description</span><span>Action</span></div>{items.map((f,i)=><div key={f.id} className="result-table-row surface-grid"><span>{String(i+1).padStart(2,"0")}</span><span><i className={`pill not-italic ${severityClass(f.severity)}`}>{f.severity}</i></span><b>{serviceName(f)}</b><b>{servicePort(f)}</b><span className="truncate text-slate-500">{f.description||"Public service is reachable from the internet."}</span><button onClick={()=>openFinding(f)} className="view-action">View <Icon name="arrow-right" className="h-4 w-4"/></button></div>)}</div> : <div className="result-table"><div className="result-table-head finding-grid"><span>#</span><span>Severity</span><span>Finding</span><span>Description</span><span>Action</span></div>{items.map((f,i)=><div key={f.id} className="result-table-row finding-grid"><span>{String(i+1).padStart(2,"0")}</span><span><i className={`pill not-italic ${severityClass(f.severity)}`}>{f.severity}</i></span><b>{f.title}</b><span className="truncate text-slate-500">{f.description||"General web security information"}</span><button onClick={()=>openFinding(f)} className="view-action">View <Icon name="arrow-right" className="h-4 w-4"/></button></div>)}</div>}
+                  {surface&&<div className="good-to-know"><Icon name="lightbulb" className="h-6 w-6"/><div><b>Good to know</b><p>Public services may be intentionally exposed. Review each service and ensure it is required and properly secured.</p></div></div>}
+                </section>;
+              })}
+            </div> : <div className="card mt-4 overflow-hidden">{findings.length===0?<Empty title="No findings in this check" text="Nothing actionable was detected by this check. This is not a guarantee that the website has no vulnerabilities."/>:<div>{findings.map(f=><button key={f.id} onClick={()=>openFinding(f)} className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-slate-100 px-5 py-4 text-left last:border-b-0 hover:bg-slate-50"><span className={`pill ${severityClass(f.severity)}`}>{f.severity}</span><span><b className="block text-sm">{f.title}</b><small className="text-xs text-slate-400">{f.description}</small></span><span className="view-action">View <Icon name="arrow-right" className="h-4 w-4"/></span></button>)}</div>}</div>}
           </section>}
-  
-          <section className="mt-4 grid gap-4 md:grid-cols-[1.15fr_.85fr]">
-            <div className="card overflow-hidden">
-              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-                <div><h2 className="text-xl font-extrabold">Security results {selected?`(${findings.length})`:""}</h2><p className="mt-0.5 text-xs text-slate-400">Findings and verified external-service observations from this check.</p></div>
-              </div>
-              {active?<Empty title="Scan in progress" text="Results appear here when the scan is finished."/>:!selected?<Empty title="Select a scan" text="Choose a recent scan to review its findings."/>:selected.status!=="completed"?<Empty title="No result published" text="This check did not complete, so SkullHarbor did not publish a partial security result."/>:findings.length===0?<Empty title="No findings in this check" text="Nothing actionable was detected by this check. This is not a guarantee that the website has no vulnerabilities."/>:<div>{(selected.scan_profile==="monthly"?groupedFindings:[{name:null,items:findings}]).map(group=><div key={group.name||"findings"}>{group.name&&<div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-3"><b className="text-xs uppercase tracking-wide text-slate-600">{group.name}</b><span className="pill bg-white text-slate-500">{group.items.length} {resultNoun(group.name)}{group.items.length===1?"":"s"}</span></div>}{group.items.map(f=><button key={f.id} onClick={()=>openFinding(f)} className="grid w-full grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-slate-100 px-5 py-4 text-left transition last:border-b-0 hover:bg-slate-50"><span className={`pill ${severityClass(f.severity)}`}>{f.severity}</span><span className="min-w-0"><b className="block truncate text-sm text-slate-900">{f.title}</b><small className="mt-1 block truncate text-xs text-slate-400">{f.description||"General web security information"}</small></span><span className="inline-flex items-center gap-1 rounded-xl border-2 border-emerald-500 px-3 py-2 text-sm font-bold text-blue-600">View <Icon name="chevron" className="h-4 w-4"/></span></button>)}</div>)}</div>}
-            </div>
-  
-            <div className="card overflow-hidden">
-              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4"><h2 className="text-xl font-extrabold">Recent scans</h2><span className="text-sm font-semibold text-blue-600">View all →</span></div>
-              {scans.length===0?<Empty title="No scans yet" text="Your completed scans will appear here." small/>:<div>{scans.slice(0,5).map(s=><button key={s.id} onClick={()=>openScan(s.id)} className={`grid w-full grid-cols-[auto_1fr_auto_auto] items-center gap-3 border-b border-slate-100 px-5 py-4 text-left transition last:border-b-0 hover:bg-slate-50 ${selected?.id===s.id?"bg-blue-50/40":""}`}><span className="text-slate-400"><Icon name="clock"/></span><span className="min-w-0"><b className="block truncate text-sm">{s.target}</b><small className="mt-1 block truncate text-xs text-slate-400">{new Date(s.created_at).toLocaleString()} · {s.finding_count} finding{s.finding_count===1?"":"s"}</small></span><span className={`pill ${statusClass(s.status)}`}>{s.status}</span><Icon name="chevron" className="h-4 w-4 text-slate-400"/></button>)}</div>}
-            </div>
-          </section>
+
+          {selected&&selected.status!=="completed"&&<section className="card mt-4 overflow-hidden"><Empty title="No result published" text="This check did not complete, so SkullHarbor did not publish a partial security result."/></section>}
   
           <footer className="py-7 text-[10px] text-slate-400">Use only against systems you own or are explicitly authorized to test.</footer>
         </div>
