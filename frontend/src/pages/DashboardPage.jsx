@@ -57,7 +57,7 @@ export default function DashboardPage(props) {
             <div className="report-title-row">
               <div className="flex min-w-0 items-start gap-4">
                 <span className="report-complete-icon"><Icon name={isAdvanced?"shield":"check"} className="h-8 w-8"/></span>
-                <div className="min-w-0"><h2 className="text-3xl font-black tracking-[-.035em] text-slate-950">{isAdvanced?"Advanced Security Check Complete":"Scan complete"}</h2><b className="mt-1 block break-all text-sm text-slate-800">{selected.target}</b><p className="mt-1 text-xs text-slate-500">{selected.created_at?`Completed on ${new Date(selected.created_at).toLocaleString()}`:"Completed"}{isAdvanced?" · All 3 scan categories completed successfully.":""}</p></div>
+                <div className="min-w-0"><h2 className="text-3xl tracking-[-.035em] text-slate-950">{isAdvanced?"Advanced Security Check Complete":"Scan complete"}</h2><b className="mt-1 block break-all text-sm text-slate-800">{selected.target}</b><p className="mt-1 text-xs text-slate-500">{selected.created_at?`Completed on ${new Date(selected.created_at).toLocaleString()}`:"Completed"}{isAdvanced?" · All 3 scan categories completed successfully.":""}</p></div>
               </div>
               {isAdvanced&&<div className="report-title-metrics">
                 <div><b>{findings.filter(f=>(f.coverage_family||"Core web security")!=="Public service exposure").length}</b><span>Findings</span></div>

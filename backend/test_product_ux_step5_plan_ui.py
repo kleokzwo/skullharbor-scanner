@@ -7,7 +7,7 @@ assert 'function customerPlanState(status)' in ui
 assert 'days left' in ui
 assert 'Advanced · Active' in ui
 assert 'Manage subscription · coming later' in ui
-assert '>Upgrade to Advanced</button>' in ui
+assert 'Upgrade to Advanced' in ui
 assert 'planState.detail' in ui
 # Customer-facing status should not render the raw authority state badge.
 assert '>{accessState}</span>' not in ui

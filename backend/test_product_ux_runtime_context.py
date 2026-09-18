@@ -15,8 +15,8 @@ try:
     row=db.query(Target).filter(Target.domain=='skullharbor.org',Target.status=='verified').first()
     assert row is not None and row.user_id is None
     # endpoint source must explicitly preserve this state instead of claiming re-verification
-    src=open('application.py',encoding='utf-8').read()
-    assert '@app.get("/api/product-readiness")' in src
+    src=open('controllers/customer_controller.py',encoding='utf-8').read()
+    assert '@router.get("/api/product-readiness")' in src
     assert 'ownership_verified = bool(user is not None and row.user_id == user.id)' in src
     assert 'Website ownership is verified. Set up your customer profile and product access to scan.' in src
     ui='\n'.join(p.read_text(encoding='utf-8') for p in __import__('pathlib').Path('../frontend/src').rglob('*.jsx'))

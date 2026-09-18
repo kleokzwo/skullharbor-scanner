@@ -3,7 +3,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
 frontend = "\n".join(p.read_text(encoding="utf-8") for p in (root / "frontend" / "src").rglob("*.jsx"))
-backend = (root / "backend" / "application.py").read_text(encoding="utf-8")
+backend = "\n".join((root / "backend" / p).read_text(encoding="utf-8") for p in ("controllers/scan_controller.py", "services/verification_service.py"))
 
 # Runtime stages are translated into customer language; raw engineering logs are
 # no longer rendered in the normal product surface.
@@ -28,7 +28,7 @@ for internal_name in ("Nikto", "Nuclei", "Nmap"):
     assert internal_name not in frontend
 
 # Backend remains authoritative and raw output remains excluded from scan detail.
-assert '@app.post("/api/scan")' in backend
+assert '@router.post("/api/scan")' in backend
 assert '_scan_authorization' in backend
 assert '# raw_output is retained internally for engineering diagnostics only.' in backend
 assert '"raw_output": f.raw_output' not in backend

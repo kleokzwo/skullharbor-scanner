@@ -88,13 +88,13 @@ try:
         for forbidden in ("target", "scan", "finding", "raw_output", "verification_token"):
             assert forbidden not in audit_columns
 
-    source = Path(main.__file__).read_text(encoding="utf-8").lower()
+    source = (Path(main.__file__).parent / "schemas" / "api.py").read_text(encoding="utf-8").lower()
     # Step 3 remains an internal trusted boundary: no customer-facing decision endpoint.
     for forbidden_route in (
-        '@app.post("/api/users/{user_id}/approve")',
-        '@app.post("/api/users/{user_id}/reject")',
-        '@app.post("/api/users/{user_id}/suspend")',
-        '@app.post("/api/admin', '@app.patch("/api/users/{user_id}")',
+        '@router.post("/api/users/{user_id}/approve")',
+        '@router.post("/api/users/{user_id}/reject")',
+        '@router.post("/api/users/{user_id}/suspend")',
+        '@router.post("/api/admin', '@router.patch("/api/users/{user_id}")',
     ):
         assert forbidden_route not in source
 

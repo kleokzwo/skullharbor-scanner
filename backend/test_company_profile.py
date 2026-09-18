@@ -38,12 +38,13 @@ try:
         result = main.update_company_profile(user.id, req, db)
         assert result["verification_status"] == "suspended"
 
-    source = Path(main.__file__).read_text(encoding="utf-8").lower()
-    request_src = source.split("class companyprofilerequest", 1)[1].split("class targetrequest", 1)[0]
+    source = (Path(main.__file__).parent / "schemas" / "api.py").read_text(encoding="utf-8").lower()
+    request_src = source.split("class companyprofilerequest", 1)[1].split("class trustedreviewcontext", 1)[0]
     for forbidden in ("verification_status", "approved", "rejected", "suspended", "scan_profile", "tier", "license"):
         assert forbidden not in request_src, f"company profile request can influence protected state: {forbidden}"
 
-    endpoint_src = source.split("def update_company_profile", 1)[1].split('@app.get("/api/targets")', 1)[0]
+    controller_source = (Path(main.__file__).parent / "controllers" / "customer_controller.py").read_text(encoding="utf-8").lower()
+    endpoint_src = controller_source.split("def update_company_profile", 1)[1].split('@router.get("/api/users/{user_id}/product-status")', 1)[0]
     assert "verification_status =" not in endpoint_src
     assert "_resolve_public_ips" not in endpoint_src  # company identity is not target authorization
     assert "_authorized_target_for_scan" not in endpoint_src

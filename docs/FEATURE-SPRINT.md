@@ -217,3 +217,83 @@ A local product-acceptance test exposed two blocking defects; Step 5 cannot clos
 - Each retry deletes the previous structured report to prevent stale-result false positives.
 - Primary CLI diagnostics stay private/internal; customer UI remains vendor-neutral.
 - 3/3 Advanced fail-closed rule remains unchanged.
+
+### Sprint 8 / Closeout Regression Fix 1 (2026-09-18)
+- Closeout regression suite aligned with the completed composition-root refactor; tests no longer assume API/business logic lives in `main.py` or that React pages use only one exact `return` formatting style.
+- Customer-isolation regression now patches the owning controller dependencies directly, preserving the production fail-closed DNS/target policy while making the test deterministic and independent of external DNS.
+- Public-service regression validates the actual server-owned Advanced port policy rather than requiring obsolete customer-facing explanatory copy.
+- Confirmed PASS: SOLID structure, customer isolation/FREE one-site boundary, surface observation normalization/readiness flow, Advanced coverage closeout, Advanced coverage integrity, and surface truth closeout.
+- No production security rule was relaxed by these test corrections.
+- Sprint 8 remains open until the remaining regression inventory and frontend production build are completed.
+
+### Sprint 8 / Closeout Regression Fix 2 (2026-09-18)
+- Reconfirmed the product boundary: SkullHarbor is downloadable/local desktop software; scan execution, targets, raw scanner data and findings stay on the customer machine. Central services remain limited to trust/verification/activation/entitlement/subscription and must never become the scan backend.
+- Added a frontend closeout contract regression covering the Finding detail overlay exit, Sidebar/MobileNav navigation, Previous/Next result navigation and AppController state wiring.
+- Frontend dependency metadata is complete (`package.json` + lockfile), but the bundled development `node_modules` snapshot is incomplete (`vite` executable missing). This is treated as a build-environment/dependency snapshot issue, not as a product-code success/failure signal.
+- Production distribution must not depend on a customer's global Node/Python/scanner installation. The coming self-contained-runtime sprint remains a release requirement, not an optional cloud alternative.
+- Sprint 8 remains open until a clean dependency install can execute the frontend production build and the remaining legacy regression tests have been migrated away from pre-refactor source-layout assumptions.
+
+## Sprint 8 / Closeout Fix 3 — 18.09.2026
+
+### Desktop/local product boundary
+- SkullHarbor remains a downloadable local scanner application, not a cloud scanner.
+- Targets, raw scanner output and findings remain local to the customer installation.
+- A future central service is limited to trust/verification/activation/entitlement/subscription functions.
+
+### Regression closeout
+- Added `test_sprint8_closeout_architecture.py` against the current layered architecture.
+- Confirms API routes live in controllers and request models in schemas; tests must no longer assume the pre-refactor `main.py` monolith.
+- Confirms Finding detail navigation regression guard and Previous/Next controls.
+- Confirms Advanced Public Service Exposure policy does not reintroduce 80/443 as special exposure ports.
+
+### Packaging hygiene
+- Removed development `.venv`, `node_modules`, caches and generated frontend build output from the distributable source ZIP.
+- Python virtual environments and Node dependency trees are development/build artifacts, not the future customer runtime.
+
+### Still required before Sprint 8 is closed
+- Run the full backend suite with the supported Python 3.13 environment and migrate remaining pre-refactor source-string tests.
+- Run a clean `npm ci && npm run build` on the development machine.
+- Do not mark Sprint 8 complete until both are green.
+
+## Sprint 8 / Closeout Fix 4 — 18.09.2026
+
+### Legacy regression migration
+- Migrated remaining closeout tests away from pre-refactor `main.py` / `application.py` source-layout assumptions to the actual controller/schema/service ownership.
+- Updated customer/company/trusted-review/engagement/entitlement/public-boundary regressions to inspect the current layered architecture without weakening runtime authorization rules.
+- Updated old Settings/Plan UI tests to tolerate the current formatted React source and the current truthful customer-facing Advanced copy.
+- Removed the obsolete 8080/8443 Public Service Exposure expectation; standard web/application ports are not sold as special service exposure coverage.
+- Updated the synthetic state-transition regression to the current fail-closed publication contract: partial promised coverage is never persisted/published as a completed report.
+
+### Verification
+- Core closeout inventory now passes under Python 3.13 after the legacy-test migration, including normalizer, engine, orchestration, execution budget, public boundary, profiles, state transitions, surface, tier orchestration, customer/company/trusted review, Sprint 5/6/7 security closeouts, entitlement lifecycle/signing, engagement authorization/hardening, Sprint-8 SOLID/isolation/Advanced 3-of-3/surface truth, Finding frontend contract, and current Settings/Plan UX regressions.
+- No production authorization, tenant-isolation, scan-policy, or fail-closed rule was relaxed to make tests pass.
+- Frontend production build remains the final external build-environment gate before Sprint 8 can be marked DONE.
+
+## Sprint 8 — FINAL CLOSEOUT (18.09.2026)
+
+- Backend/security/regression closeout: PASS under supported Python 3.13 development runtime.
+- Frontend production build: PASS on customer development machine (`vite build`, 1575 modules transformed, completed in 468 ms).
+- Finding detail navigation, FREE/Advanced boundaries, Advanced 3/3 fail-closed publication, Public Service observations and tenant isolation are retained.
+- **Sprint 8 status: DONE.**
+
+# Sprint 9 — Self-contained Local Scanner Runtime / Desktop Distribution
+
+## Sprint goal
+SkullHarbor remains downloadable local software, never a cloud scanner. A customer installation must not depend on globally installed Python, Node, Nikto, Nuclei, Nmap, templates, or PATH configuration. Targets, raw scanner output and findings remain local. Central services remain limited to trust/verification/activation/entitlement/subscription.
+
+## Planned steps
+1. **Runtime ownership & path resolution** — define the SkullHarbor-owned runtime root, fail closed when packaged scanner components are missing, and permit global PATH only through an explicit development switch.
+2. **Runtime manifest & integrity** — pin component/template versions and verify hashes/signatures before execution.
+3. **Scanner packaging feasibility & licensing** — document redistribution/license/notices/platform requirements before bundling any third-party binary.
+4. **Packaged adapter integration** — route internal adapters exclusively through verified runtime components in production.
+5. **Application runtime packaging** — package backend + frontend without customer Python/Node setup.
+6. **Installer/update strategy** — platform installer, atomic/runtime-safe updates, rollback and notices.
+7. **Security closeout** — path traversal/symlink/tamper tests, tenant regressions, offline/local-data boundary and clean-machine install test.
+
+## Sprint 9 / Step 1 — Runtime ownership & path resolution
+- Added `backend/core/runtime_paths.py` as the single ownership boundary for local scanner executable paths.
+- Default/production behavior is fail-closed when a SkullHarbor-owned runtime component is absent.
+- Global system scanner names are available only when `SKULLHARBOR_DEV_SYSTEM_SCANNERS=1` is explicitly set for development; this fallback is not a production distribution mechanism.
+- `SKULLHARBOR_RUNTIME_DIR` supports deterministic test/build staging without changing customer-facing behavior.
+- Added `test_sprint9_runtime_paths.py` covering fail-closed missing runtime, owned executable resolution and explicit development fallback.
+- No third-party binaries were copied into the repository in Step 1; redistribution/licensing review remains mandatory before packaging.

@@ -5,7 +5,7 @@ main=(root/'frontend/src/main.jsx').read_text()
 assert len(main.splitlines()) < 250, 'frontend main.jsx became a page monolith again'
 for page in ('DashboardPage.jsx','ScansPage.jsx','TargetsPage.jsx','SettingsPage.jsx','FindingPage.jsx','SetupPage.jsx'):
     text=(root/'frontend/src/pages'/page).read_text()
-    assert 'return <' in text, f'{page} must own its rendered page markup'
+    assert ('return <' in text or 'return (' in text), f'{page} must own its rendered page markup'
 assert (root/'backend/services/plans/free.py').exists()
 assert (root/'backend/services/plans/advanced.py').exists()
 assert (root/'backend/services/target_security.py').exists()

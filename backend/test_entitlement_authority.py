@@ -84,7 +84,7 @@ try:
         grant(db, untrusted, "monthly", "active", source="local-customer")
         assert main._entitlement_record(db, untrusted)["status"] == "BLOCKED"
 
-    source = Path(main.__file__).read_text(encoding="utf-8").lower()
+    source = (Path(main.__file__).parent / "schemas" / "api.py").read_text(encoding="utf-8").lower()
     request_block = source.split("class scanrequest", 1)[1].split("class userrequest", 1)[0]
     for forbidden in ("entitlement", "license", "subscription", "tier", "profile", "authority_status"):
         assert forbidden not in request_block

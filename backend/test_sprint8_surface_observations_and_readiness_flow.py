@@ -12,5 +12,7 @@ css=(root/'frontend/src/style.css').read_text()
 dash=(root/'frontend/src/pages/DashboardPage.jsx').read_text()
 assert 'readiness-flow' in ui and ui.count('readiness-connector') >= 2
 assert '.readiness-connector' in css
-assert 'Security results' in dash and 'normal website ports 80/443 are excluded' in dash
+# Port 80/443 exclusion is a backend policy invariant, not required customer-facing copy.
+advanced=(root/'backend/services/plans/advanced.py').read_text()
+assert '80,' not in advanced and '443,' not in advanced
 print('surface observations and readiness flow tests: OK')

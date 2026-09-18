@@ -14,7 +14,8 @@ assert ADVANCED_POLICY.secondary_include_tags == ""
 assert ADVANCED_POLICY.secondary_automatic_scan is False
 assert {"dos", "fuzz", "bruteforce", "intrusive"}.issubset(set(ADVANCED_POLICY.secondary_excluded_tags.split(",")))
 assert 80 not in ADVANCED_POLICY.surface_ports and 443 not in ADVANCED_POLICY.surface_ports
-assert set((21,22,445,3306,3389,5432,6379,8080,8443,27017)).issubset(set(ADVANCED_POLICY.surface_ports))
+assert set((21,22,445,3306,3389,5432,6379,27017)).issubset(set(ADVANCED_POLICY.surface_ports))
+assert 8080 not in ADVANCED_POLICY.surface_ports and 8443 not in ADVANCED_POLICY.surface_ports
 for page in ("DashboardPage.jsx","ScansPage.jsx","TargetsPage.jsx","SettingsPage.jsx","FindingPage.jsx"):
     assert (root / "frontend" / "src" / "pages" / page).exists()
 print("advanced coverage and structure tests: OK")

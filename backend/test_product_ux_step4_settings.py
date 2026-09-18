@@ -12,10 +12,9 @@ assert 'if(effectiveId) setUserId(effectiveId)' in src
 for phrase in (
     "Choose the coverage you need",
     "Common file and configuration checks",
-    "Information disclosure checks",
-    "Injection and XSS checks",
+    "Exposed file & information checks",
+    "Injection & XSS checks",
     "SQL injection checks",
-    "Software identification",
     "Public-service exposure checks",
     "Managed pentest engagement",
 ):

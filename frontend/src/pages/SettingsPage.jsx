@@ -323,7 +323,7 @@ export default function SettingsPage(props) {
                                         icon={Sparkles}
                                         title="Advanced"
                                         eyebrow="RECOMMENDED"
-                                        price="€XX"
+                                        price="€30"
                                         priceNote="per month"
                                         subtitle="Broader controlled coverage for ongoing security checks."
                                         current={isAdvanced}

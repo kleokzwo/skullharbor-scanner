@@ -5,6 +5,8 @@ from fastapi import HTTPException
 fd,path=tempfile.mkstemp(suffix='.db'); os.close(fd)
 os.environ['DATABASE_URL']=f'sqlite:///{path}'
 import main
+import controllers.target_controller as target_controller
+import controllers.scan_controller as scan_controller
 from database import Base, engine, SessionLocal
 from models import User, Target, Scan
 Base.metadata.create_all(bind=engine)
@@ -32,7 +34,7 @@ try:
     except HTTPException as e: assert e.status_code==404
 
     # FREE already has one authorized website: a second enrollment must fail
-    main._resolve_public_ips=lambda domain:['203.0.113.10']
+    target_controller._resolve_public_ips=lambda domain:['203.0.113.10']
     try: main.create_target(main.TargetRequest(domain='second-a.test',user_id=a.id),db); raise AssertionError('FREE added second website')
     except HTTPException as e: assert e.status_code==403
 
@@ -48,7 +50,7 @@ try:
     assert foreign['ready_for_quick_check'] is False
 
     # The authoritative scan gate must also reject the foreign domain.
-    main.validate_target_url=lambda value: ('https://b.test','b.test',['203.0.113.11'])
+    scan_controller.validate_target_url=lambda value: ('https://b.test','b.test',['203.0.113.11'])
     try: main.scan(main.ScanRequest(target='https://b.test',user_id=a.id),db); raise AssertionError('foreign domain scan was accepted')
     except HTTPException as e: assert e.status_code==403
 

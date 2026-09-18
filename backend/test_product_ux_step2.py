@@ -3,7 +3,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
 frontend = "\n".join(x.read_text(encoding="utf-8") for x in (root / "frontend" / "src").rglob("*.jsx"))
-backend = (root / "backend" / "application.py").read_text(encoding="utf-8")
+backend = "\n".join((root / "backend" / p).read_text(encoding="utf-8") for p in ("controllers/target_controller.py", "services/verification_service.py"))
 
 # The product explains ownership verification in customer language.
 assert "Verify ownership." in frontend
@@ -22,7 +22,7 @@ assert 'targets.filter(t=>!userId || String(t.user_id)===String(userId))' in fro
 # UX does not weaken the backend ownership proof: a unique SkullHarbor TXT
 # token is still generated and the authoritative verify endpoint remains.
 assert 'verification_token=secrets.token_urlsafe(24)' in backend
-assert '@app.post("/api/targets/{target_id}/verify")' in backend
+assert '@router.post("/api/targets/{target_id}/verify")' in backend
 assert 'expected = f"sh-verification={target.verification_token}"' in backend
 assert '_resolve_public_ips(target.domain)' in backend
 
