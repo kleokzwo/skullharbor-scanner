@@ -7,7 +7,8 @@ monthly = get_scan_profile("monthly")
 free = get_scan_profile("free")
 assert "surface" in monthly.adapter_slots
 assert "surface" not in free.adapter_slots
-assert scanner.SURFACE_ALLOWED_PORTS == (80, 443, 8080, 8443)
+assert 80 not in scanner.SURFACE_ALLOWED_PORTS and 443 not in scanner.SURFACE_ALLOWED_PORTS
+assert {21,22,445,3306,3389,5432,6379,8080,8443,27017}.issubset(set(scanner.SURFACE_ALLOWED_PORTS))
 assert scanner.SURFACE_ADAPTER_TIMEOUT_SECONDS <= 90
 
 sample = """<?xml version='1.0'?>
@@ -18,10 +19,11 @@ sample = """<?xml version='1.0'?>
 <port protocol='tcp' portid='22'><state state='open'/></port>
 </ports></host></nmaprun>"""
 findings = scanner.normalize_surface_xml(sample, "https://example.com")
-assert len(findings) == 2
+assert len(findings) == 3
 assert {f["rule_id"] for f in findings} == {
-    "web.surface.alternate-port.8080",
-    "web.surface.alternate-port.8443",
+    "surface.external-service.22",
+    "surface.external-service.8080",
+    "surface.external-service.8443",
 }
 assert all(f["scanner"] == "web-security" for f in findings)
 assert all("nmap" not in repr(f).lower() for f in findings)

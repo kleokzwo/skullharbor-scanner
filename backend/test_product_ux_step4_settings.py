@@ -1,6 +1,6 @@
 from pathlib import Path
 
-src = (Path(__file__).parents[1] / "frontend" / "src" / "main.jsx").read_text()
+src = "\n".join(p.read_text() for p in (Path(__file__).parents[1] / "frontend" / "src").rglob("*.jsx"))
 
 # Customer identity is chosen independently of target/scan rows. Never recover
 # or switch an account from another customer's target ownership data.

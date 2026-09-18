@@ -21,6 +21,7 @@ for private in ("nikto", "nuclei", "nmap", "tuning", "12349b", "adapter"):
 
 # Secondary automatic checks remain bounded away from risky classes.
 scanner_source = (Path(__file__).parent / "scanner.py").read_text().lower()
-assert 'nuclei_excluded_tags = "dos,fuzz,bruteforce,intrusive"' in scanner_source
+assert 'nuclei_excluded_tags = advanced_policy.secondary_excluded_tags' in scanner_source
+assert 'nuclei_include_tags = advanced_policy.secondary_include_tags' in scanner_source
 
 print("paid profile policy refinement tests: OK")

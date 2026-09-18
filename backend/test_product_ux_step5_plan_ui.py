@@ -1,6 +1,6 @@
 """Sprint 8 Step 5: professional customer-facing plan UX."""
 from pathlib import Path
-ui=(Path(__file__).resolve().parent.parent/'frontend'/'src'/'main.jsx').read_text()
+ui='\n'.join(x.read_text() for x in (Path(__file__).resolve().parent.parent/'frontend'/'src').rglob('*.jsx'))
 roadmap=(Path(__file__).resolve().parent.parent/'docs'/'FEATURE-SPRINT.md').read_text()
 assert 'function daysRemaining(validUntil)' in ui
 assert 'function customerPlanState(status)' in ui

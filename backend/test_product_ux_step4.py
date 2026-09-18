@@ -21,7 +21,7 @@ try:
         free=main._issue_entitlement(db,u.id,'free',main.TrustedReviewContext(actor_id='local-development-authority',actor_role='admin',source='entitlement-authority'),license_id='dev-free-test',seat_limit=1,valid_until=now+main.timedelta(days=7),trial=True)
         assert free['status']=='TRIAL' and free['scan_profile']=='free'
     dev=Path(__file__).with_name('dev_authority.py').read_text()
-    ui=(Path(__file__).parents[1]/'frontend/src/main.jsx').read_text()
+    ui='\n'.join(x.read_text() for x in (Path(__file__).parents[1]/'frontend/src').rglob('*.jsx'))
     assert 'test_products": ["free", "monthly"]' in dev
     assert '/access/{product_key}' in dev
     assert 'Use MONTHLY test access' in ui and 'Use FREE test access' in ui

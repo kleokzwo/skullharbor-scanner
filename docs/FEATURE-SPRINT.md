@@ -2,6 +2,17 @@
 
 This file is the working product-feature sequence. Development follows these steps in order; do not skip ahead unless a blocking defect must be fixed first.
 
+
+### Step 6 architecture hardening — SOLID/KISS refactor 2
+
+- Frontend page markup is physically split from `main.jsx` into `src/pages/` (Dashboard, Scans, Targets, Settings, Finding, Setup).
+- Shared presentation primitives live in `src/components/ui.jsx`; `main.jsx` is reduced to application state/API orchestration and page routing.
+- FREE and Advanced product policies remain isolated in `backend/services/plans/free.py` and `advanced.py`.
+- Target canonicalization/public-IP validation moved to `backend/services/target_security.py` and is reused by the existing scan engine.
+- Existing customer isolation, ownership, entitlement and installation-binding enforcement remains backend-authoritative and fail-closed.
+- Architecture regression prevents `main.jsx` from silently becoming the page monolith again.
+- No customer-facing scanner-engine names were introduced.
+
 ## Sprint 8 — Product UX
 
 ### Step 1 — Dashboard Access & Readiness — DONE
@@ -126,3 +137,83 @@ A local product-acceptance test exposed two blocking defects; Step 5 cannot clos
 - Customer-facing target, scan, scan-detail/status/stop, product-status and readiness paths reject a request that names a different local customer.
 - A released/missing installation binding fails closed and does not fall back to another local customer.
 - Development multi-customer switching remains explicit and isolated to the development build for tenant-isolation testing.
+
+### Sprint 8 / Step 6 — architecture & Advanced coverage hardening
+- FREE remains the bounded primary web check only (policy `12`).
+- Advanced explicitly orchestrates all three private adapter slots: primary + secondary known-vulnerability/misconfiguration coverage + bounded web-surface discovery.
+- Advanced secondary policy is server-owned and restricted to controlled families (`cve`, `misconfig`, `exposure`, `tech`, `xss`, `sqli`) with disruptive classes explicitly excluded (`dos`, `fuzz`, `bruteforce`, `intrusive`, `headless`), low rate/concurrency, and no customer-supplied flags.
+- Advanced surface discovery remains TCP/web-focused and bounded to a small server-owned port set; no UDP, OS scan, NSE scripts, brute force or unrestricted modes.
+- Product policy moved into `backend/services/plans/free.py` and `advanced.py` so paid/free coverage can be maintained without editing API routes.
+- Frontend `src/pages/` boundaries added for Dashboard, Scans, Targets, Settings and Finding. New page-specific presentation work must live there; `main.jsx` remains the controller while existing JSX is migrated without changing security behavior.
+- This refactor is intentionally behavior-preserving for customer identity, target authorization, installation binding and tenant isolation.
+
+
+### Sprint 8 / Step 6 — Composition-root refactor 2 (2026-09-17)
+- Backend `main.py` is now a thin ASGI composition root only; business/API implementation was moved out without behavior changes.
+- Frontend `main.jsx` is now bootstrap-only; application orchestration lives under `src/app/` and page rendering remains under `src/pages/`.
+- Existing regression compatibility is retained through a temporary backend attribute bridge; new code must import owning modules directly.
+- Fixed the shared target-security import so public-IP resolution uses the centralized fail-closed target policy.
+- Release rule: entrypoints must never accumulate product, entitlement, authorization, target, scan, or UI-page business logic again.
+
+### Sprint 8 / Step 6 — Composition Refactor 4 (architecture correction)
+- Backend monolithic `application.py` removed as runtime implementation; it is now compatibility-only.
+- `main.py` is composition/bootstrap only and contains no product/business rules.
+- FastAPI composition moved to `app_factory.py`.
+- API endpoints are split into controllers: system, customer, target, scan.
+- Business rules are split into services: customer, workspace, engagement, entitlement, verification, target security, plan policies.
+- Request DTOs live under `schemas/`; persistence models remain in `models.py`; startup/database compatibility lives under `infrastructure/`; runtime/config wiring lives under `core/`.
+- Development-only compatibility hooks are isolated in `development_compat.py` and must not ship in production packaging.
+- Frontend bootstrap remains minimal; `App.jsx` is composition-only; orchestration is in `controllers/AppController.jsx`; pages remain under `pages/`; API transport starts under `services/`.
+- Security behavior is intentionally preserved: customer isolation, exact target ownership/engagement authorization, entitlement gating and installation binding remain backend authoritative/fail-closed.
+
+### Sprint 8 / Step 6 — Advanced Coverage Hardening (2026-09-17)
+- Advanced remains three bounded internal coverage families: core web security, known vulnerability/exposure checks, and public-service exposure.
+- Paid Advanced is now fail-closed for promised coverage: all configured Advanced coverage families must complete before the scan may be published as COMPLETED.
+- A failed/timeout Advanced family can no longer silently produce a partial FREE-like "Advanced" result.
+- Completed scans persist a vendor-neutral coverage summary; customer UI shows coverage completion without exposing internal scanner/tool names.
+- Finding count is not artificially inflated: a completed coverage family may legitimately return zero findings.
+- DoS, fuzzing, brute force, intrusive/headless classes and unrestricted surface scanning remain excluded from self-service.
+
+
+### Sprint 8 / Step 6 — Advanced real-scan runtime hotfix
+- Fixed real Advanced scans stalling on blanket historical CVE template coverage.
+- Known-vulnerability coverage now uses bounded technology-aware automatic matching plus controlled misconfiguration/exposure/XSS/SQLi/technology families.
+- Added request timeout/retry/host-error bounds and disabled update checks during a customer scan.
+- Failed/stopped Advanced scans never render a zero-finding result card; partial results remain unpublished.
+
+### Sprint 8 / Step 6 — Advanced Runtime Hotfix 4 + Finding Attribution
+- Kept the hard 120-second secondary coverage budget; fixed throughput inside that budget instead of extending customer wait time.
+- Advanced secondary checks now use bounded 15 req/s, concurrency 5, 4-second request timeout and zero retries; disruptive template classes remain excluded.
+- Every normalized finding is now persisted with a customer-safe coverage family (Core web security / Known vulnerability & exposure checks / Public service exposure).
+- Advanced Findings UI is grouped by coverage family and lists the actual findings under each family; coverage completion cards remain execution evidence, not a replacement for findings.
+- SQLite compatibility migration adds `findings.coverage_family` without deleting existing data; legacy findings fall back to Core web security in the customer API.
+
+
+### Sprint 8 / Step 6 — Advanced Runtime Hotfix 5
+- Fixed the persistent paid secondary-check timeout at its source: automatic workflow expansion is disabled for Quick Check.
+- Advanced secondary coverage now uses the explicit bounded SkullHarbor tag allow-list only (misconfiguration, exposure, technology, XSS, SQL injection), with disruptive classes still excluded.
+- Customer wording no longer overclaims blanket CVE coverage; the family is shown as “Vulnerability & exposure checks”.
+- Successful Advanced results keep coverage completion separate from the actual itemized findings. Findings are grouped by coverage family and each finding remains individually openable.
+- 3/3 fail-closed publication remains mandatory; failed scans do not publish partial security findings.
+
+
+### Sprint 8 / Step 6 — Advanced Coverage Integrity Hotfix 6
+- Coverage completion is evidence-based; process exit code alone is insufficient.
+- Core connectivity failures are operational diagnostics and are never published as INFO security findings.
+- Surface coverage requires parseable completed probe evidence.
+- Successful Advanced results still publish concrete findings grouped by coverage family.
+- 3/3 remains fail-closed for Advanced.
+
+### Sprint 8 / Step 6 — Primary HTTPS Invocation Hotfix 7
+- Root cause of the Hotfix-6 Core failure identified: rewriting an already-authorized HTTPS URL into separate host/port/`-ssl` arguments changed execution behavior on the supported Kali primary-engine build.
+- Primary execution now preserves the canonical authorized target URL exactly as the previously working path did.
+- Coverage-integrity hardening from Hotfix 6 remains: connectivity diagnostics are filtered from findings and a connectivity-only primary result cannot count as completed coverage.
+- Added a regression guard preventing reintroduction of the broken HTTPS host/port rewrite.
+
+### Sprint 8 / Step 6 — Primary HTTPS transport compatibility hotfix 8
+- Core web coverage no longer gives up after one HTTPS transport variant.
+- Bounded compatibility ladder: canonical URL -> canonical URL without TLS keep-alive -> explicit TLS host/port with vhost.
+- Connectivity-only output remains execution failure and is never published as a customer finding.
+- Each retry deletes the previous structured report to prevent stale-result false positives.
+- Primary CLI diagnostics stay private/internal; customer UI remains vendor-neutral.
+- 3/3 Advanced fail-closed rule remains unchanged.

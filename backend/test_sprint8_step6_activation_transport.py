@@ -6,7 +6,7 @@ from entitlement_signing import sign_entitlement
 import main
 
 # Production activation is code-based and the desktop request contains no scan data.
-front = (Path(__file__).resolve().parent.parent / 'frontend/src/main.jsx').read_text()
+front = '\n'.join(p.read_text() for p in (Path(__file__).resolve().parent.parent / 'frontend/src').rglob('*.jsx'))
 gateway = (Path(__file__).resolve().parent / 'activation_gateway.py').read_text()
 assert '/api/activation' in front and 'activation_code' in front
 assert 'targets' not in gateway.lower() or 'not part of the request' in gateway

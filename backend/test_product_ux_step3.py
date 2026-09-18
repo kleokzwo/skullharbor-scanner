@@ -2,8 +2,8 @@
 from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
-frontend = (root / "frontend" / "src" / "main.jsx").read_text(encoding="utf-8")
-backend = (root / "backend" / "main.py").read_text(encoding="utf-8")
+frontend = "\n".join(p.read_text(encoding="utf-8") for p in (root / "frontend" / "src").rglob("*.jsx"))
+backend = (root / "backend" / "application.py").read_text(encoding="utf-8")
 
 # Runtime stages are translated into customer language; raw engineering logs are
 # no longer rendered in the normal product surface.

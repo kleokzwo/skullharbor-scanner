@@ -1,0 +1,20 @@
+id: skullharbor-exposed-git-config
+info:
+  name: Exposed Git configuration
+  author: SkullHarbor
+  severity: high
+  description: A Git configuration file is publicly accessible.
+  tags: exposure
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.git/config"
+    redirects: false
+    max-redirects: 0
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: word
+        part: body
+        words: ["[core]"]

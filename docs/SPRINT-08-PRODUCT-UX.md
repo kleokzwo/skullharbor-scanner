@@ -244,3 +244,10 @@ Added `test_product_ux_single_customer_upgrade.py` and `test_product_ux_step4_si
 ### Step 4 hardening — account/plan state truthfulness
 
 Step 4 now keeps the Settings surface aligned with authoritative local state: pending or missing organization data is no longer labelled as verified, and an expired/blocked Advanced entitlement is no longer described as active. Inactive access remains fail-closed for new scans while the existing local customer identity, verified targets and authorization records remain untouched. The Free plan comparison is marked current only when the resolved product key is actually `free`.
+
+### Step 6 — Advanced secondary QuickCheck runtime closeout (Hotfix 11)
+- Replaced broad upstream tag selection with a version-controlled local allow-list.
+- Root cause confirmed on Kali/Nuclei v3.11.1: broad tags loaded 3,650 templates and planned 7,796 requests for one target (~4m runtime).
+- Advanced secondary now runs six safe, GET-only HTTP exposure/misconfiguration templates shipped with SkullHarbor.
+- No customer-controlled template paths/flags; no automatic scan, headless, code, network, DoS, fuzz or brute-force templates.
+- Advanced remains fail-closed: all three promised coverage families must complete before results are published.

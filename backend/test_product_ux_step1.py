@@ -52,7 +52,7 @@ try:
 
     source = Path(main.__file__).read_text(encoding="utf-8")
     assert '@app.get("/api/users/{user_id}/product-status")' in source
-    frontend = (Path(main.__file__).parent.parent / "frontend" / "src" / "main.jsx").read_text(encoding="utf-8")
+    frontend = "\n".join(x.read_text(encoding="utf-8") for x in (Path(main.__file__).parent.parent / "frontend" / "src").rglob("*.jsx"))
     assert "ready_for_quick_check" in frontend
     assert "Your access and scope are checked again by SkullHarbor when the scan starts." in frontend
 

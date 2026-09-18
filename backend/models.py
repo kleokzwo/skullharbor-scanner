@@ -50,6 +50,8 @@ class Scan(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     target_id = Column(Integer, ForeignKey("targets.id"), nullable=True)
     engagement_id = Column(Integer, ForeignKey("engagements.id"), nullable=True)
+    # Vendor-neutral record of promised coverage families and their completion.
+    coverage_summary = Column(Text, nullable=True)
     user = relationship("User", back_populates="scans")
     verified_target = relationship("Target", back_populates="scans")
     findings = relationship("Finding", back_populates="scan", cascade="all, delete-orphan")
@@ -67,6 +69,8 @@ class Finding(Base):
     # Stable normalized finding metadata used by every future scanner adapter.
     rule_id = Column(String(120), nullable=True, index=True)
     category = Column(String(120), nullable=True)
+    # Customer-safe coverage family that produced this normalized finding.
+    coverage_family = Column(String(120), nullable=True, index=True)
 
     severity = Column(String(20), nullable=False, default="info")
     title = Column(String(500), nullable=False)

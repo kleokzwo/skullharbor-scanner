@@ -2,8 +2,8 @@
 from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
-frontend = (root / "frontend" / "src" / "main.jsx").read_text(encoding="utf-8")
-backend = (root / "backend" / "main.py").read_text(encoding="utf-8")
+frontend = "\n".join(x.read_text(encoding="utf-8") for x in (root / "frontend" / "src").rglob("*.jsx"))
+backend = (root / "backend" / "application.py").read_text(encoding="utf-8")
 
 # The product explains ownership verification in customer language.
 assert "Verify ownership." in frontend

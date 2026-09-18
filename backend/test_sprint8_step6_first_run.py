@@ -1,9 +1,9 @@
 from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
-frontend = (root / "frontend" / "src" / "main.jsx").read_text()
+frontend = "\n".join(p.read_text() for p in (root / "frontend" / "src").rglob("*.jsx"))
 launcher = (root / "desktop_launcher.py").read_text()
-backend = (root / "backend" / "main.py").read_text()
+backend = (root / "backend" / "application.py").read_text()
 roadmap = (root / "docs" / "FEATURE-SPRINT.md").read_text()
 
 assert 'FIRST RUN' in frontend

@@ -1,0 +1,16 @@
+id: skullharbor-public-actuator
+info:
+  name: Public application actuator endpoint
+  author: SkullHarbor
+  severity: medium
+  description: An application management endpoint is publicly reachable.
+  tags: exposure
+http:
+  - method: GET
+    path: ["{{BaseURL}}/actuator", "{{BaseURL}}/actuator/env"]
+    redirects: false
+    matchers:
+      - type: word
+        part: body
+        words: ["_links", "propertySources", "activeProfiles"]
+        condition: or

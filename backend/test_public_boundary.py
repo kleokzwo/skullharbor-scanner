@@ -10,7 +10,7 @@ public_frontend_files += [
     if p.is_file() and p.suffix.lower() in {".js", ".jsx", ".ts", ".tsx", ".css", ".html"}
 ]
 frontend = "\n".join(p.read_text(errors="ignore") for p in public_frontend_files if p.exists())
-main = (root / "backend" / "main.py").read_text()
+main = (root / "backend" / "application.py").read_text()
 
 for vendor in ("nikto", "nuclei", "nmap"):
     assert vendor not in frontend.lower(), f"internal adapter name leaked into frontend: {vendor}"

@@ -1,6 +1,6 @@
 """Sprint 8 Step 4: Settings must not mislabel identity or expired Advanced access."""
 from pathlib import Path
-ui=(Path(__file__).resolve().parent.parent/'frontend'/'src'/'main.jsx').read_text()
+ui="\n".join(p.read_text() for p in (Path(__file__).resolve().parent.parent/'frontend'/'src').rglob('*.jsx'))
 assert 'organizationApproved=current?.verification_status==="approved"' in ui
 assert 'Organization not configured' in ui
 assert 'Verification pending' in ui

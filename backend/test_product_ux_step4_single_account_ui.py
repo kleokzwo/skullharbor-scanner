@@ -1,6 +1,6 @@
 """Sprint 8 Step 4 UX contract: one organization, plan changes are not profile creation."""
 from pathlib import Path
-ui=(Path(__file__).parents[1]/'frontend/src/main.jsx').read_text()
+ui='\n'.join(x.read_text() for x in (Path(__file__).parents[1]/'frontend/src').rglob('*.jsx'))
 assert 'Account & plan' in ui
 assert 'Changing plan never creates another profile.' in ui
 assert 'Upgrade to Advanced' in ui
